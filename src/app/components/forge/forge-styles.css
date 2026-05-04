@@ -1,0 +1,40 @@
+/* forge/forge-styles.css */
+
+:root {
+  --gw-neon-blue: #89CFF0;
+  --gw-neon-pink: #FF00FF;
+  --gw-neon-purple: #9400D3;
+}
+
+/* Sijoča obroba za Developerje */
+.gw-developer-glow {
+  position: relative;
+  padding: 3px;
+  background: linear-gradient(45deg, var(--gw-neon-blue), var(--gw-neon-pink), var(--gw-neon-purple));
+  border-radius: 12px;
+  display: inline-block;
+  box-shadow: 0 0 15px rgba(137, 207, 240, 0.4), 0 0 15px rgba(255, 0, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.gw-developer-glow:hover {
+  box-shadow: 0 0 25px rgba(137, 207, 240, 0.7), 0 0 25px rgba(255, 0, 255, 0.5);
+  filter: brightness(1.2);
+}
+
+/* Neon gumbi za Forge sekcijo */
+.forge-button {
+  background: rgba(137, 207, 240, 0.1);
+  border: 1px solid var(--gw-neon-blue);
+  color: white;
+  text-transform: uppercase;
+  font-weight: 900;
+  letter-spacing: 1px;
+  transition: all 0.3s;
+}
+
+.forge-button:hover {
+  background: var(--gw-neon-blue);
+  color: black;
+  box-shadow: 0 0 20px var(--gw-neon-blue);
+}
