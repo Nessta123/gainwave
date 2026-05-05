@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 
-// Trdo kodiran endpoint na tvojo varno domeno!
 const s3 = new S3Client({
     region: 'us-east-1',
-    endpoint: "https://media.gain-wave.com:9000",
+    endpoint: "http://91.98.116.217:9000",
     credentials: {
-        accessKeyId: process.env.MINIO_ACCESS_KEY!,
-        secretAccessKey: process.env.MINIO_SECRET_KEY!,
+        accessKeyId: process.env.MINIO_ACCESS_KEY || 'admin',
+        secretAccessKey: process.env.MINIO_SECRET_KEY || 'GainWaveSlovenia2024',
     },
     forcePathStyle: true,
 });
@@ -23,16 +22,16 @@ export async function POST(req: Request) {
         }
 
         const buffer = Buffer.from(await file.arrayBuffer());
+        const bucketName = process.env.MINIO_BUCKET_NAME || 'gainwave';
 
         await s3.send(new PutObjectCommand({
-            Bucket: process.env.MINIO_BUCKET_NAME || 'gainwave-media',
+            Bucket: bucketName,
             Key: path,
             Body: buffer,
             ContentType: file.type,
         }));
 
-        // Javni URL, ki ga vrnemo v bazo
-        const publicUrl = `https://media.gain-wave.com/${process.env.MINIO_BUCKET_NAME || 'gainwave-media'}/${path}`;
+        const publicUrl = `https://www.gain-wave.com/media/${path}`;
         
         return NextResponse.json({ url: publicUrl });
     } catch (e: any) {
