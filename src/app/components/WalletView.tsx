@@ -159,6 +159,37 @@ export default function WalletView({ userData, darkMode, onPromote, setActiveCha
     }
   };
 
+  // 🔥 NOVO: PREKLIC STRIPE NAROČNINE 🔥
+  const handleCancelSubscription = async () => {
+    if (!confirm('Are you sure you want to cancel your PRO subscription? Your PRO status will remain active until the end of the paid period.')) return;
+
+    setIsSubmitting(true);
+    const toastId = toast.loading("Canceling subscription via Stripe...");
+
+    try {
+      const res = await fetch('/api/stripe/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userData.id })
+      });
+      
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Subscription successfully canceled. You will not be charged next month.', { id: toastId });
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else {
+        toast.error('Error canceling: ' + (data.error || 'Unknown error'), { id: toastId });
+      }
+    } catch (error) {
+      console.error(error);
+      toast.error('Server communication error.', { id: toastId });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // 🔥 NOVO: KUPITEV PRO NODE S KOVANCI (GAINS) 🔥
   const handleUpgradeWithGains = async (cost: number) => {
     if ((userData.gains_balance || 0) < cost) {
@@ -367,19 +398,19 @@ export default function WalletView({ userData, darkMode, onPromote, setActiveCha
 
   const submitWithdrawalRequest = async () => {
     if (!withdrawalData.amount || !withdrawalData.address) {
-      alert("Prosimo, izpolnite vsa polja.");
+      alert("Please fill in all fields.");
       return;
     }
 
     const requestedAmount = parseFloat(withdrawalData.amount);
 
     if (requestedAmount <= 0) {
-      alert("Znesek mora biti večji od 0.");
+      alert("Amount must be greater than 0.");
       return;
     }
 
     if (userData.earned_balance < requestedAmount) {
-       alert("Nimate dovolj sredstev za izplačilo (Rewards balance je prenizek).");
+       alert("Insufficient funds for withdrawal (Rewards balance too low).");
        return;
     }
 
@@ -395,14 +426,14 @@ export default function WalletView({ userData, darkMode, onPromote, setActiveCha
 
       if (error) throw error;
 
-      alert(`Zahtevek za ${withdrawalData.amount}$ je bil uspešno oddan. Obdelan bo v 24-48 urah.`);
+      alert(`Withdrawal request for $${withdrawalData.amount} was successfully submitted. It will be processed in 24-48 hours.`);
       setShowWithdrawalModal(false);
       setWithdrawalData({ amount: '', method: 'USDT', address: '' });
       
     } catch (err: any) {
-      console.error("Napaka pri shranjevanju:", err.message);
+      console.error("Error saving:", err.message);
       if (err.message.includes('function "request_withdrawal" does not exist')) {
-          console.warn("RPC funkcija ne obstaja, izvajam zasilni klient prenos...");
+          console.warn("RPC function missing, executing fallback client transfer...");
           const { error: insertErr } = await supabase
             .from('withdrawals')
             .insert([
@@ -416,7 +447,7 @@ export default function WalletView({ userData, darkMode, onPromote, setActiveCha
             ]);
             
           if(insertErr) {
-             alert("Prišlo je do napake pri oddaji zahtevka. Poskusite znova.");
+             alert("An error occurred submitting the request. Please try again.");
              setIsSubmitting(false);
              return;
           }
@@ -435,14 +466,14 @@ export default function WalletView({ userData, darkMode, onPromote, setActiveCha
                 item_name: `Vault Withdrawal (${withdrawalData.method})`
              }]);
 
-             alert(`Zahtevek za ${withdrawalData.amount}$ je bil uspešno oddan. Obdelan bo v 24-48 urah.`);
+             alert(`Withdrawal request for $${withdrawalData.amount} was successfully submitted. It will be processed in 24-48 hours.`);
              setShowWithdrawalModal(false);
              setWithdrawalData({ amount: '', method: 'USDT', address: '' });
           } else {
-             alert("Napaka pri odbitku sredstev. Prosim kontaktirajte podporo.");
+             alert("Error deducting funds. Please contact support.");
           }
       } else {
-          alert("Prišlo je do napake pri oddaji zahtevka: " + err.message);
+          alert("An error occurred submitting the request: " + err.message);
       }
     } finally {
       setIsSubmitting(false);
@@ -740,7 +771,42 @@ export default function WalletView({ userData, darkMode, onPromote, setActiveCha
          )}
       </div>
 
-      {/* 🔥 PRO UPGRADE SEKCIJA 🔥 */}
+      {/* 🔥 UPRAVLJANJE AKTIVNE PRO VEZAVE (PRIKAŽE SE SAMO PRO UPORABNIKOM) 🔥 */}
+      {isPro && (
+        <div className={`p-8 md:p-10 rounded-[3.5rem] border relative overflow-hidden transition-all ${
+          darkMode ? 'bg-gradient-to-br from-green-900/20 to-emerald-900/10 border-green-500/30 shadow-[0_0_50px_rgba(34,197,94,0.1)]' : 'bg-gradient-to-br from-green-50 to-emerald-50 border-green-200 shadow-xl'
+        }`}>
+          <div className="absolute -top-20 -right-20 w-64 h-64 bg-green-500/10 blur-[80px] pointer-events-none" />
+
+          <div className="flex flex-col md:flex-row items-center justify-between gap-8 relative z-10">
+            <div className="space-y-4 flex-1">
+              <div className="flex items-center gap-3">
+                <span className="text-3xl drop-shadow-[0_0_15px_rgba(34,197,94,0.8)]">👑</span>
+                <div className="flex flex-col">
+                  <h3 className={`text-xl font-black uppercase tracking-tight ${darkMode ? 'text-white' : 'text-green-900'}`}>PRO Node Active</h3>
+                  <span className="text-[9px] font-black uppercase text-green-500 tracking-widest">All premium features unlocked</span>
+                </div>
+              </div>
+              
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={handleCancelSubscription}
+                  disabled={isSubmitting}
+                  className="px-6 py-3 bg-red-600/10 text-red-500 border border-red-600/50 hover:bg-red-600 hover:text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(220,38,38,0.2)] disabled:opacity-50"
+                >
+                  {isSubmitting ? 'Processing...' : 'Cancel Monthly Subscription'}
+                </button>
+                <p className={`text-[8px] mt-2 uppercase tracking-widest ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
+                  Status remains valid until the end of the billing period.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔥 PRO UPGRADE SEKCIJA (PRIKAŽE SE SAMO NE-PRO UPORABNIKOM) 🔥 */}
       {!isPro && (
         <div className={`p-8 md:p-12 rounded-[3.5rem] border relative overflow-hidden transition-all ${
           darkMode ? 'bg-gradient-to-br from-indigo-900/40 to-blue-900/20 border-blue-500/30 shadow-[0_0_50px_rgba(59,130,246,0.15)]' : 'bg-gradient-to-br from-blue-600 to-indigo-700 border-blue-400 shadow-xl'
@@ -988,10 +1054,10 @@ export default function WalletView({ userData, darkMode, onPromote, setActiveCha
             <span className="text-2xl drop-shadow-[0_0_15px_rgba(255,255,255,0.3)]">📜</span>
             <div>
                <h3 className={`text-sm font-black uppercase tracking-[0.2em] ${darkMode ? 'text-white' : 'text-black'}`}>
-                  Transaction History
+                 Transaction History
                </h3>
                <p className={`text-[9px] uppercase font-bold tracking-widest mt-1 ${darkMode ? 'text-zinc-500' : 'text-zinc-400'}`}>
-                  Secure ledger of all incoming and outgoing terminal transfers
+                 Secure ledger of all incoming and outgoing terminal transfers
                </p>
             </div>
          </div>
