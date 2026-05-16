@@ -22,6 +22,7 @@ import TokenArchitect from './components/TokenArchitect';
 import ProjectTerminal from './components/ProjectTerminal'; 
 import AssetRegistry from './components/AssetRegistry';
 import AIGameStudio from './components/AIGameStudio'; 
+import AcademyView from './components/AcademyView';
 
 const compressImage = (file: File, isPro: boolean): Promise<File> => {
   return new Promise((resolve, reject) => {
@@ -104,7 +105,6 @@ const getGlassCardClass = (darkMode: boolean) => darkMode
   ? 'bg-gradient-to-br from-zinc-700/30 to-zinc-900/80 backdrop-blur-xl border border-white/5 border-t-white/10 border-l-white/10 shadow-[0_10px_30px_rgba(0,0,0,0.5)] shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)] hover:-translate-y-1 hover:shadow-[0_15px_40px_rgba(0,0,0,0.7)] transition-all duration-300'
   : 'bg-gradient-to-br from-white/80 to-zinc-200/50 backdrop-blur-xl border border-white/50 border-t-white/80 border-l-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.08)] shadow-[inset_0_1px_2px_rgba(255,255,255,0.9)] hover:-translate-y-1 hover:shadow-[0_15px_40px_rgba(0,0,0,0.15)] transition-all duration-300';
 
-// 🔥 POPRAVLJEN "Vtisnjen" razred za input polja (Mehkejša senca, prosojno steklo) 🔥
 const getSunkenClass = (darkMode: boolean) => darkMode
   ? 'bg-black/20 shadow-[inset_0_4px_20px_rgba(0,0,0,0.5)] border border-white/5 text-white placeholder-zinc-500'
   : 'bg-zinc-200/40 shadow-[inset_0_4px_15px_rgba(0,0,0,0.05)] border border-black/5 text-zinc-900 placeholder-zinc-400';
@@ -114,6 +114,7 @@ const AdminDashboard = ({ darkMode, userData, onExit }: any) => {
   const [isLoading, setIsLoading] = useState(true);
   const [targetAlias, setTargetAlias] = useState("");
   const [proDuration, setProDuration] = useState<number>(30); 
+  const [broadcastText, setBroadcastText] = useState("");
 
   const fetchAdminData = async () => {
     setIsLoading(true);
@@ -127,31 +128,31 @@ const AdminDashboard = ({ darkMode, userData, onExit }: any) => {
   }, []);
 
   const handleMarkAsPaid = async (id: string, alias: string) => {
-    if (!confirm(`Označi izplačilo za @${alias} kot PLAČANO?`)) return;
+    if (!confirm(`Mark payout for @${alias} as PAID?`)) return;
     const { error } = await supabase.from('withdrawals').update({ status: 'completed' }).eq('id', id);
     if (!error) {
-      toast.success("Zahtevek označen kot uspešen!");
-      await supabase.from('messages').insert([{ from_alias: 'SYSTEM', to_alias: alias, text: `✅ PAYOUT SUCCESSFUL: Vaš zahtevek za izplačilo je bil uspešno obdelan in nakazan!`, is_read: false }]);
+      toast.success("Request marked as successful!");
+      await supabase.from('messages').insert([{ from_alias: 'SYSTEM', to_alias: alias, text: `✅ PAYOUT SUCCESSFUL: Your payout request has been successfully processed!`, is_read: false }]);
       fetchAdminData();
-    } else toast.error("Napaka pri posodabljanju.");
+    } else toast.error("Error updating.");
   };
 
   const handleReject = async (id: string, userId: string, amount: number, alias: string) => {
-    if (!confirm(`ZAVRNI zahtevek in vrni ${amount} GAINS uporabniku @${alias}?`)) return;
+    if (!confirm(`REJECT request and return ${amount} GAINS to @${alias}?`)) return;
     const { error: updateErr } = await supabase.from('withdrawals').update({ status: 'rejected' }).eq('id', id);
-    if (updateErr) return toast.error("Napaka pri zavrnitvi.");
+    if (updateErr) return toast.error("Error rejecting.");
 
     const { data: wallet } = await supabase.from('user_balances').select('earned_balance').eq('user_id', userId).single();
     if (wallet) await supabase.from('user_balances').update({ earned_balance: wallet.earned_balance + amount }).eq('user_id', userId);
 
-    await supabase.from('messages').insert([{ from_alias: 'SYSTEM', to_alias: alias, text: `❌ PAYOUT REJECTED: Vaš zahtevek za ${amount} GAINS je bil zavrnjen. Sredstva so vrnjena.`, is_read: false }]);
-    toast.success("Zavrnjeno in denar vrnjen!");
+    await supabase.from('messages').insert([{ from_alias: 'SYSTEM', to_alias: alias, text: `❌ PAYOUT REJECTED: Your request for ${amount} GAINS has been rejected. Funds returned.`, is_read: false }]);
+    toast.success("Rejected and funds returned!");
     fetchAdminData();
   };
 
   const handleDirectProAction = async (actionType: 'GRANT' | 'REVOKE') => {
     if (!targetAlias.trim()) {
-      toast.error("Prosim, vnesi ALIAS uporabnika!");
+      toast.error("Please enter user ALIAS!");
       return;
     }
 
@@ -163,11 +164,11 @@ const AdminDashboard = ({ darkMode, userData, onExit }: any) => {
       .maybeSingle();
 
     if (searchError || !targetUser) {
-      toast.error(`Uporabnik @${cleanAlias} ne obstaja v bazi!`);
+      toast.error(`User @${cleanAlias} does not exist in the database!`);
       return;
     }
 
-    if (!confirm(`Ali res želiš narediti ${actionType} PRO status za @${targetUser.alias}?`)) return;
+    if (!confirm(`Are you sure you want to ${actionType} PRO status for @${targetUser.alias}?`)) return;
 
     let expiryDate = null;
     const newStatus = actionType === 'GRANT';
@@ -187,7 +188,7 @@ const AdminDashboard = ({ darkMode, userData, onExit }: any) => {
       .eq('id', targetUser.id);
     
     if (!error) {
-      toast.success(`Uspeh! @${targetUser.alias} je sedaj ${newStatus ? 'PRO' : 'FREE'}.`);
+      toast.success(`Success! @${targetUser.alias} is now ${newStatus ? 'PRO' : 'FREE'}.`);
       
       if (newStatus) {
         const durationText = proDuration === 9999 ? 'LIFETIME' : `${proDuration} DAYS`;
@@ -200,7 +201,24 @@ const AdminDashboard = ({ darkMode, userData, onExit }: any) => {
       }
       setTargetAlias(""); 
     } else {
-      toast.error("Napaka pri posodabljanju statusa.");
+      toast.error("Error updating status.");
+    }
+  };
+
+  const handleSendBroadcast = async () => {
+    if (!broadcastText.trim()) return toast.error("Enter broadcast message!");
+    if (!confirm("Are you sure? Message will be broadcasted to ALL users in the network!")) return;
+
+    const toastId = toast.loading("Broadcasting signal to the entire network...");
+    
+    try {
+      const { error } = await supabase.rpc('broadcast_system_message', { msg_text: broadcastText });
+      if (error) throw error;
+
+      toast.success("🚀 BROADCAST SUCCESSFUL: All nodes received the notification!", { id: toastId });
+      setBroadcastText("");
+    } catch (err) {
+      toast.error("Error broadcasting.", { id: toastId });
     }
   };
 
@@ -314,6 +332,30 @@ const AdminDashboard = ({ darkMode, userData, onExit }: any) => {
               </div>
             </div>
 
+            <div className={`p-6 md:p-8 rounded-[2.5rem] transition-all duration-300 relative overflow-hidden ${glassPanelClass}`}>
+              <div className="absolute -top-10 -right-10 w-40 h-40 bg-purple-500/20 blur-[60px] pointer-events-none z-0"></div>
+              <div className="relative z-10">
+                <div className="flex items-center gap-3 mb-6">
+                  <span className="text-xl drop-shadow-lg">📢</span>
+                  <h3 className="text-sm font-black uppercase tracking-widest text-purple-500">Global Network Broadcast</h3>
+                </div>
+                
+                <textarea 
+                  placeholder="Write new update or feature here..."
+                  value={broadcastText}
+                  onChange={(e) => setBroadcastText(e.target.value)}
+                  className={`w-full p-5 rounded-2xl text-sm outline-none font-medium min-h-[120px] transition-all ${sunkenClass} focus:border-purple-500/50`}
+                />
+                
+                <button 
+                  onClick={handleSendBroadcast}
+                  className="w-full mt-4 py-5 bg-gradient-to-r from-purple-600 to-indigo-700 text-white rounded-2xl text-xs font-black uppercase tracking-widest hover:brightness-110 shadow-[0_10px_25px_rgba(124,58,237,0.4)] transition-all active:scale-95"
+                >
+                  🚀 Launch Global Update
+                </button>
+              </div>
+            </div>
+
           </div>
         )}
       </div>
@@ -326,22 +368,7 @@ export default function Home() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      (window as any).$crisp = [];
-      (window as any).CRISP_WEBSITE_ID = "3eca814c-3d35-4a49-96d6-5bde6268df48";
-      (function() {
-        const d = document;
-        const s = d.createElement("script");
-        s.src = "https://client.crisp.chat/l.js";
-        s.async = true;
-        d.getElementsByTagName("head")[0].appendChild(s);
-      })();
-
-      (window as any).$crisp.push(["do", "chat:hide"]);
-      (window as any).$crisp.push(["on", "chat:closed", () => {
-         (window as any).$crisp.push(["do", "chat:hide"]);
-      }]);
-    }
+    // Odstranjen Crisp - zamenjano z interno Telegram integracijo
   }, []);
   
   const [isMuted, setIsMuted] = useState<boolean>(() => {
@@ -359,7 +386,7 @@ export default function Home() {
     return [];
   });
   
-  const [activeTab, setActiveTab] = useState<'feed' | 'profile' | 'community' | 'terminal' | 'forge' | 'assets' | 'game'>('feed');
+  const [activeTab, setActiveTab] = useState<'feed' | 'profile' | 'community' | 'terminal' | 'forge' | 'assets' | 'game' | 'academy'>('feed');
   const [activeSubTab, setActiveSubTab] = useState<'info' | 'journal' | 'wallet'>('info'); 
   
   const [isRegistering, setIsRegistering] = useState(false);
@@ -797,30 +824,63 @@ export default function Home() {
 
       if (error) throw error;
     } catch (err) {
-      console.error("Napaka pri shranjevanju bot profita:", err);
+      console.error("Error saving bot profit:", err);
     }
   };
 
-  const fetchAds = async () => {
-    const { data, error } = await supabase
-      .from('boosted_posts')
-      .select('*, posts!inner(*)')
-      .eq('is_active', true)
-      .gt('end_date', new Date().toISOString());
+ const fetchAds = async () => {
+    const now = new Date().toISOString();
 
-    if (!error && data) {
-      const formattedAds = data.map((ad: any) => ({
+    try {
+      // 1. BOOSTANE OBJAVE (iz Feeda)
+      const { data: boostedData } = await supabase
+        .from('boosted_posts')
+        .select('*, posts!inner(*, profiles:user_id(alias, avatar_url, country))')
+        .gt('end_date', now);
+
+      let formattedBoosts = boostedData?.map((ad: any) => ({
         ...ad.posts, 
+        authorAlias: ad.posts.profiles?.alias,
+        authorAvatar: ad.posts.profiles?.avatar_url,
+        authorCountry: ad.posts.profiles?.country,
         is_boosted_ad: true, 
+        ad_type: 'boost',
         ad_id: ad.id,
-      }));
-      setActiveAds(formattedAds);
+      })) || [];
+
+      // 2. WALLET OGLASI (tisti s slikco na levi)
+      const { data: walletAdsData } = await supabase
+        .from('ads')
+        .select('*, profiles:user_id(alias, avatar_url, country)')
+        .gt('end_date', now);
+
+      let formattedWalletAds = walletAdsData?.map((ad: any) => ({
+        id: `ad_${ad.id}`, 
+        user_id: ad.user_id,
+        authorAlias: ad.profiles?.alias || ad.title, // Če ni profila, vzame naslov oglasa
+        authorAvatar: ad.profiles?.avatar_url,
+        authorCountry: ad.profiles?.country || '🏳️',
+        text: ad.content, 
+        image: ad.image_url,
+        link: ad.target_url, 
+        created_at: ad.start_date,
+        bulls: 0,
+        bears: 0,
+        is_boosted_ad: true,
+        ad_type: 'wallet_ad',
+        ad_id: ad.id,
+      })) || [];
+
+      const combinedAds = [...formattedBoosts, ...formattedWalletAds];
+      setActiveAds(combinedAds.sort(() => 0.5 - Math.random()));
+    } catch (e) {
+      console.error("Ads fetch error:", e);
     }
   };
 
   const handleLaunchAd = async (adData: any, cost: number) => {
     if (userData.gains_balance < cost) {
-      alert("Insufficient GAINS balance!");
+      toast.error("Insufficient GAINS balance!");
       return;
     }
 
@@ -828,6 +888,7 @@ export default function Home() {
     expires_at.setHours(expires_at.getHours() + adData.duration);
 
     try {
+      // 1. Odštejemo GAINS
       const { error: walletErr } = await supabase
         .from('user_balances')
         .update({ bulls_balance: userData.gains_balance - cost })
@@ -835,54 +896,60 @@ export default function Home() {
 
       if (walletErr) throw walletErr;
 
+      // 2. Provizija za referrerja
       const referralCut = cost * 0.1;
       const { data: buyerProfile } = await supabase.from('profiles').select('referred_by_id').eq('id', userData.id).single();
       
       if (buyerProfile?.referred_by_id && referralCut > 0) {
-         const { data: refWallet } = await supabase.from('user_balances').select('earned_balance').eq('user_id', buyerProfile.referred_by_id).maybeSingle();
-         if (refWallet) {
-             await supabase.from('user_balances').update({ earned_balance: (refWallet.earned_balance || 0) + referralCut }).eq('user_id', buyerProfile.referred_by_id);
-             
-             await supabase.from('transactions').insert([{
+          const { data: refWallet } = await supabase.from('user_balances').select('earned_balance').eq('user_id', buyerProfile.referred_by_id).maybeSingle();
+          if (refWallet) {
+              await supabase.from('user_balances').update({ earned_balance: (refWallet.earned_balance || 0) + referralCut }).eq('user_id', buyerProfile.referred_by_id);
+              await supabase.from('transactions').insert([{
                 buyer_id: userData.id,
                 seller_id: buyerProfile.referred_by_id,
                 amount: referralCut,
                 item_type: 'REFERRAL_BONUS',
                 item_name: '10% Ad Spend Commission'
-             }]);
-
-             const { data: refProfile } = await supabase.from('profiles').select('alias').eq('id', buyerProfile.referred_by_id).single();
-             if (refProfile) {
-                 await supabase.from('messages').insert([{
-                    from_alias: 'SYSTEM',
-                    to_alias: refProfile.alias,
-                    text: `📢 NETWORK BONUS: Your recruit bought Ad Space! You earned +${referralCut.toFixed(2)} GAINS.`,
-                    is_read: false
-                 }]);
-             }
-         }
+              }]);
+          }
       }
 
-      const { error: adErr } = await supabase.from('boosted_posts').insert([{
-        user_id: userData.id,
-        post_id: adData.post_id,
-        start_date: new Date().toISOString(),
-        end_date: expires_at.toISOString(),
-        is_active: true
-      }]);
+      // 3. LOGIKA ZA LOČEVANJE TABEL 🔥
+      if (adData.post_id) {
+        // A) To je BOOST objave iz Feeda
+        const { error: boostErr } = await supabase.from('boosted_posts').insert([{
+          user_id: userData.id,
+          post_id: adData.post_id,
+          start_date: new Date().toISOString(),
+          end_date: expires_at.toISOString(),
+          is_active: true
+        }]);
+        if (boostErr) throw boostErr;
+      } else {
+        // B) To je splošni AD iz Walleta
+        const { error: adErr } = await supabase.from('ads').insert([{
+          user_id: userData.id,
+          title: adData.title || "GainWave Partner",
+          content: adData.content || adData.text || "",
+          image_url: adData.image_url || null,
+          target_url: adData.target_url || null,
+          start_date: new Date().toISOString(),
+          end_date: expires_at.toISOString(),
+          is_active: true,
+          type: 'wallet_ad'
+        }]);
+        if (adErr) throw adErr;
+      }
 
-      if (adErr) throw adErr;
-
-      alert("Campaign Launched Successfully! 🚀");
+      toast.success("Campaign Launched Successfully! 🚀");
       setIsAdModalOpen(false);
       fetchAds(); 
       setUserData((prev: any) => ({ ...prev, gains_balance: prev.gains_balance - cost }));
-    } catch (err) {
-      console.error(err);
-      alert("Error launching campaign.");
+    } catch (err: any) {
+      console.error("Ad Launch Error:", err);
+      toast.error("Error launching campaign: " + err.message);
     }
   };
-
   const fetchPostsFromDB = async () => {
     try {
       const { data: postsData, error: postsError } = await supabase
@@ -1302,7 +1369,7 @@ export default function Home() {
     setCalcResult(Number(lotSize.toFixed(2)));
   };
 
-const sendPrivateMessage = async () => {
+  const sendPrivateMessage = async () => {
     if (!chatInput.trim() || !activeChat || !userData.alias) return;
     try {
       let finalMessageText = chatInput;
@@ -1321,6 +1388,19 @@ const sendPrivateMessage = async () => {
       const { error, data } = await supabase.from('messages').insert([newMessagePayload]).select();
       
       if (!error && data) {
+        // 🔥 TELEGRAM SUPPORT BLOKADA 🔥
+        if (activeChat === 'GainWaveSupport') {
+          fetch('/api/support/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              message: finalMessageText, 
+              username: userData.alias,
+              isSupport: true 
+            })
+          }).catch(console.error);
+        }
+
         const receiverProf = allProfiles.find(p => p.alias === activeChat);
         if (receiverProf) dispatchNotification({ type: 'direct_message', senderAlias: userData.alias, receiverId: receiverProf.id, content: chatInput });
         else {
@@ -1621,6 +1701,19 @@ const sendPrivateMessage = async () => {
           return;
       }
 
+      // 🔥 NOVO: PREVERI DNEVNI LIMIT 5 OBJAV 🔥
+      const todayStr = new Date().toISOString().split('T')[0];
+      const { count: postsToday } = await supabase
+          .from('posts')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', user.id)
+          .gte('created_at', `${todayStr}T00:00:00.000Z`);
+
+      if (postsToday !== null && postsToday >= 5) {
+          alert("⛔ Daily limit reached! You can post a maximum of 5 times per day.");
+          return;
+      }
+
       let finalImageUrl = null;
       if (selectedImage) {
         toast.info("Compressing image...");
@@ -1659,6 +1752,24 @@ const sendPrivateMessage = async () => {
         finalImageUrl = uploadData.url; 
       }
 
+      // 🔥 POPRAVEK ZA MT5 / FOREX 🔥
+      let finalSignalStatus = signalData ? 'pending' : null;
+      let finalVerifySource = userData.verify_source || 'manual';
+      let isCrypto = true;
+      
+      if (signalData && signalData.pair) {
+          const p = signalData.pair.toUpperCase();
+          // Preverimo, če je par kripto
+          isCrypto = p.includes('USDT') || p.includes('BTC') || p.includes('ETH') || p.includes('SOL');
+          
+          if (!isCrypto) {
+              // 🔥 TUKAJ JE TISTI "STYL" (visual_only), KI SVA GA UPORABILA ZADNJIČ! 🔥
+              // Python bot ta status 100% ignorira, GlobalFeed pa ga prepozna in nariše "👁️ MT5 PENDING".
+              finalSignalStatus = 'visual_only';
+              finalVerifySource = 'mt5';
+          }
+      }
+
       const newPostData = {
         text: newPost,
         image_url: finalImageUrl,
@@ -1673,7 +1784,8 @@ const sendPrivateMessage = async () => {
         entry_price: signalData?.entry || null,
         sl_price: signalData?.sl || null,
         tp_price: signalData?.tp || null,
-        signal_status: signalData ? 'pending' : null 
+        signal_status: finalSignalStatus,
+        verify_source: finalVerifySource
       };
 
       const { data, error } = await supabase.from('posts').insert([newPostData]).select();
@@ -1687,6 +1799,30 @@ const sendPrivateMessage = async () => {
           const pushContent = isSignal 
               ? { pair: newPostData.pair, type: newPostData.direction } 
               : newPost.substring(0, 50) + "...";
+
+          // 🔥 AUTOMATIC NOTIFICATION FOR FOREX/GOLD 🔥
+          if (isSignal && !isCrypto) {
+              await supabase.from('messages').insert([{
+                  from_alias: 'SYSTEM',
+                  to_alias: userData.alias,
+                  text: `⚠️ MT5 UPDATE: Signal for ${newPostData.pair} marked as MT5 PENDING. The Judge currently processes Crypto only. Full update for Forex, Gold & Stocks automation is coming soon!`,
+                  is_read: false,
+                  created_at: new Date().toISOString()
+              }]);
+
+              const { error: commentErr } = await supabase.from('comments').insert([{
+                  post_id: data[0].id,
+                  user_id: user.id, 
+                  author_alias: 'SYSTEM',
+                  text: `⚠️ SYSTEM NOTICE: This signal contains Forex/Metals/Stocks and is marked as MT5 PENDING. It is not managed by our automated judge yet. Non-crypto market integration is coming soon!`
+              }]);
+              
+              if (commentErr) {
+                  console.log("Comments table check:", commentErr);
+              }
+              
+              toast.info("MT5 Signal opened! Check your notifications.");
+          }
 
           fetch('/api/send-push', {
             method: 'POST',
@@ -1706,6 +1842,78 @@ const sendPrivateMessage = async () => {
               senderAlias: userData.alias,
               content: pushContent
           });
+
+          // 🔥 REWARD ENGINE START 🔥
+          try {
+            const todayStr = new Date().toISOString().split('T')[0];
+            
+            const { count: rewardsCount, error: countErr } = await supabase
+              .from('daily_rewards_log')
+              .select('*', { count: 'exact', head: true })
+              .eq('user_id', user.id)
+              .eq('claimed_at', todayStr);
+
+            const currentCount = rewardsCount || 0;
+
+            if (currentCount < 5) {
+              await supabase.from('daily_rewards_log').insert([{ 
+                  user_id: user.id, 
+                  post_id: data[0].id,
+                  reward_type: 'daily_post', 
+                  amount: 0.1,
+                  claimed_at: todayStr
+              }]);
+
+              const { data: balData } = await supabase
+                  .from('user_balances')
+                  .select('bonus_balance')
+                  .eq('user_id', user.id)
+                  .maybeSingle();
+
+              let addedAmount = 0.1;
+              let isStreakBonus = false;
+
+              if (currentCount === 0) {
+                try {
+                  const { data: streak } = await supabase.rpc('check_user_streak', { u_id: user.id });
+                  if (streak === 7) {
+                    addedAmount += 1.0; 
+                    isStreakBonus = true;
+                  }
+                } catch (e) {}
+              }
+
+              const newBonusTotal = (Number(balData?.bonus_balance || 0) + addedAmount);
+              
+              await supabase.from('user_balances').upsert({ 
+                  user_id: user.id, 
+                  bonus_balance: newBonusTotal,
+                  updated_at: new Date().toISOString()
+              }, { onConflict: 'user_id' });
+
+              setUserData((prev: any) => ({ ...prev, bonus_balance: newBonusTotal }));
+
+              toast.success(`🏆 Reward [${currentCount + 1}/5]: +0.1 GAINS!`);
+              if (isStreakBonus) toast.success("🔥 7-DAY STREAK: +1.0 GAINS!");
+
+              // 🔥 TUKAJ JE NOVO: POŠLJI SPOROČILO V INBOX OD "SYSTEM" 🔥
+              const rewardMessageText = isStreakBonus 
+                ? `🏆 LOYALTY REWARD: You earned +0.1 Bonus GAINS [${currentCount + 1}/5 today].\n🔥 7-DAY STREAK COMPLETED: +1.0 EXTRA GAINS added to your Vault!`
+                : `🏆 LOYALTY REWARD: You earned +0.1 Bonus GAINS for your post [${currentCount + 1}/5 today]. Keep up the activity to earn your 7-day streak bonus!`;
+
+              await supabase.from('messages').insert([{
+                  from_alias: 'SYSTEM',
+                  to_alias: userData.alias,
+                  text: rewardMessageText,
+                  is_read: false,
+                  created_at: new Date().toISOString()
+              }]);
+
+            }
+          } catch (rewardErr) {
+            console.error("Critical Reward Error:", rewardErr);
+          }
+          // 🔥 REWARD ENGINE END 🔥
 
           const newPostForState = {
               id: data[0].id,
@@ -1734,7 +1942,7 @@ const sendPrivateMessage = async () => {
               win_rate: userData.win_rate || 0,
               total_gain: userData.total_gain || 0,
               total_profit: userData.total_profit || 0,
-              verify_source: userData.verify_source
+              verify_source: data[0].verify_source || finalVerifySource
           };
 
           setPosts(prevPosts => [newPostForState, ...prevPosts]);
@@ -2029,10 +2237,11 @@ const sendPrivateMessage = async () => {
                   return [...prev, newMessage];
               });
 
+              // Preveri, če uporabnik NI trenutno v chatu s pošiljateljem
               if (newMessage.to_alias === userData.alias && activeChatRef.current !== newMessage.from_alias) {
                   setHasNewMessage(true); 
                   if (!isMuted) {
-                      new Audio('/notification.mp3').play().catch(() => {});
+                      // 🔥 ODSTRANJEN NADLEŽNI ZVOK - ZDAJ SAMO NEŽNO ZAVIBRIRA 🔥
                       if ("vibrate" in navigator) navigator.vibrate([100,50,100]);
                   }
                   toast.info(`✉️ Direct Node: ${newMessage.from_alias}`, {
@@ -2170,9 +2379,9 @@ const sendPrivateMessage = async () => {
         const followingIds = followingData?.map(f => f.following_id) || [];
 
         if (profileData) {
-          const { data: balanceData } = await supabase.from('user_balances').select('bulls_balance, bot_profit').eq('user_id', session.user.id).maybeSingle();
+          // 🔥 TUKAJ JE DODAN BONUS BALANCE 🔥
+          const { data: balanceData } = await supabase.from('user_balances').select('bulls_balance, bot_profit, bonus_balance').eq('user_id', session.user.id).maybeSingle();
 
-          // NALOŽIMO USERJEVE PARE ZA RADAR
           if (profileData.is_premium && profileData.radar_pairs && profileData.radar_pairs.length > 0) {
               setActivePairs(profileData.radar_pairs);
           } else {
@@ -2210,6 +2419,8 @@ const sendPrivateMessage = async () => {
             gains_balance: balanceData?.bulls_balance || 0,
             bot_profit: balanceData?.bot_profit || 0,
             earned_balance: profileData.earned_balance || 0,
+            // 🔥 TUKAJ JE DODAN BONUS BALANCE 🔥
+            bonus_balance: balanceData?.bonus_balance || 0,
             has_seen_tutorial: profileData.has_seen_tutorial || false 
           }));
 
@@ -2270,7 +2481,6 @@ const sendPrivateMessage = async () => {
     };
   }, [activePairs]); 
 
-  // Poseben efekt za newsChannel
   useEffect(() => {
     const fetchMarketNews = async () => {
       const { data } = await supabase
@@ -2362,7 +2572,6 @@ const sendPrivateMessage = async () => {
     <main className={`flex min-h-screen flex-col items-center p-4 md:p-6 font-sans transition-colors duration-500 overflow-x-hidden pb-20 md:pb-6 relative ${
       darkMode ? 'bg-black text-white' : 'bg-zinc-50 text-zinc-900'
     }`}>
-      {/* VELIKI ATMOSFERSKI GLOW EFEKTI ZADAJ (Za tisti pravi Glassmorphism) */}
       <div className={`fixed top-0 left-0 w-full h-full pointer-events-none z-0 transition-opacity duration-1000 ${darkMode ? 'opacity-100' : 'opacity-50'}`}>
          <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-blue-600/10 rounded-full blur-[120px]" />
          <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] bg-purple-600/10 rounded-full blur-[120px]" />
@@ -2376,15 +2585,6 @@ const sendPrivateMessage = async () => {
         * { scrollbar-width: thin; scrollbar-color: rgba(59, 130, 246, 0.5) transparent; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        
-        #crisp-chatbox, .crisp-client {
-            bottom: 100px !important;
-        }
-        @media (min-width: 768px) {
-            #crisp-chatbox, .crisp-client {
-                bottom: 20px !important; 
-            }
-        }
       `}</style>
 
       {showAdmin && isCEO ? (
@@ -2394,18 +2594,15 @@ const sendPrivateMessage = async () => {
           {isLoggedIn && (
             <div className={`fixed top-6 left-2 right-2 lg:left-auto lg:right-6 z-[900] hidden md:flex items-center justify-center lg:justify-end gap-1.5 px-3 py-2 rounded-[2rem] overflow-x-auto no-scrollbar max-w-[95vw] transition-all duration-300 ${getGlassPanelClass(darkMode)}`}>
               <button onClick={() => { setViewingAlias(null); setActiveTab('feed'); }} className={getDesktopBtnClass(isFeedActive)}>Feed</button>
-              
               <button onClick={() => setActiveTab('assets')} className={getDesktopBtnClass(activeTab === 'assets')}>
                 🚀 Live Presales
               </button>
-              
-              <button 
-                onClick={() => setActiveTab('terminal')} 
-                className={getDesktopBtnClass(isTerminalActive)}
-              >
+              <button onClick={() => setActiveTab('terminal')} className={getDesktopBtnClass(isTerminalActive)}>
                 Terminal
               </button>
-              
+              <button onClick={() => setActiveTab('academy')} className={getDesktopBtnClass(activeTab === 'academy')}>
+                Academy
+              </button>
               <button onClick={() => setActiveTab('community')} className={getDesktopBtnClass(isHubsActive)}>Hubs</button>
               
               {userData?.is_developer && (
@@ -2417,15 +2614,11 @@ const sendPrivateMessage = async () => {
               <button onClick={() => setShowMobileInbox(true)} className={`${getDesktopBtnClass(isInboxActive)}`}>
                 Inbox {messages.filter(m => m.to_alias === userData.alias && !m.is_read).length > 0 && <span className={`w-2 h-2 rounded-full animate-pulse ${dotColorBase}`}/>}
               </button>
-              
               <button onClick={() => { setViewingAlias(userData.alias); setActiveTab('profile'); setActiveSubTab('info'); }} className={getDesktopBtnClass(isProfileActive)}>Profile</button>
-              
               <div className={`w-px h-4 mx-2 ${darkMode ? 'bg-zinc-700' : 'bg-zinc-300'}`}></div>
-              
               <button onClick={toggleMute} className={`text-lg transition-transform ${hoverColorBase} text-zinc-500`}>
                 {isMuted ? "🔕" : "🔔"}
               </button>
-
               <button onClick={() => setDarkMode(!darkMode)} className={`text-lg transition-transform ${hoverColorBase} text-zinc-500`}>
                 {darkMode ? "☀️" : "🌙"}
               </button>
@@ -2747,7 +2940,7 @@ const sendPrivateMessage = async () => {
                           onClick={handleLogout}
                           className={`w-full py-4 md:py-3 text-red-500 rounded-2xl text-[10px] md:text-[8px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 active:scale-95 ${getGlassCardClass(darkMode)} hover:!border-red-500/50 hover:!shadow-[0_0_15px_rgba(239,68,68,0.2)]`}
                         >
-                          🚪 Logout / Izpis
+                          🚪 Logout
                         </button>
                       </div>
                     )}
@@ -3012,6 +3205,10 @@ const sendPrivateMessage = async () => {
                         darkMode={darkMode} 
                       />
                     </div>
+                  ) : activeTab === 'academy' ? (
+                    <div className="animate-in fade-in duration-500 w-full mb-32 relative z-20">
+                      <AcademyView darkMode={darkMode} userData={userData} />
+                    </div>
                   ) : (
                     <div className="animate-in fade-in duration-500 space-y-6 w-full relative z-20">
                       <div className="w-full overflow-visible pb-32">
@@ -3250,11 +3447,11 @@ const sendPrivateMessage = async () => {
             balance={userData.gains_balance}
           />
 
-          <div className="fixed bottom-24 right-6 z-[800] md:bottom-10 md:right-10">
+                  <div className="fixed bottom-24 right-6 z-[800] md:bottom-10 md:right-10">
             <button 
               onClick={() => {
-                 (window as any).$crisp.push(["do", "chat:show"]);
-                 (window as any).$crisp.push(["do", "chat:open"]);
+                setActiveChat('GainWaveSupport');
+                setShowMobileInbox(false);
               }}
               className="w-14 h-14 bg-gradient-to-tr from-[#FF00FF] to-[#89CFF0] rounded-full shadow-[0_0_30px_rgba(255,0,255,0.6)] flex items-center justify-center hover:scale-110 transition-all active:scale-95 group border-2 border-white/20 relative z-50"
             >
@@ -3267,21 +3464,24 @@ const sendPrivateMessage = async () => {
             </button>
           </div>
 
-          <footer className={`w-full max-w-7xl mx-auto mt-12 mb-6 p-8 rounded-[2.5rem] text-center transition-all pb-24 md:pb-6 relative overflow-hidden ${getGlassPanelClass(darkMode)}`}>
-            <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-500/5 blur-[80px] pointer-events-none z-0"></div>
-            <div className="relative z-10">
-              <h4 className="text-xs font-black uppercase tracking-widest mb-4 text-red-500 drop-shadow-sm">⚠️ Institutional Risk Warning</h4>
-              <p className={`text-[10px] uppercase opacity-60 leading-relaxed text-justify md:text-center max-w-4xl mx-auto font-medium ${darkMode ? 'text-zinc-300' : 'text-zinc-600'}`}>
-                Trading financial markets involves high risk. GainWave is a technological platform and does not provide financial advice. All trades are at your own discretion. You could lose some or all of your initial capital. Past performance is not indicative of future results.
-              </p>
-              <div className="flex flex-wrap justify-center gap-6 mt-8 opacity-60 text-[9px] font-black uppercase tracking-[0.2em]">
-                <button onClick={() => alert("Terms of Service: GainWave is a software provider. By using this platform, you agree that you are solely responsible for your financial decisions and the risk associated with trading and investing in Web3 assets.")} className="hover:text-blue-400 transition-colors">Terms of Service</button>
-                <button onClick={() => alert("Privacy Policy: Your data is encrypted. We do not sell your personal information to third parties. Data is used strictly for platform authentication and terminal access.")} className="hover:text-blue-400 transition-colors">Privacy Policy</button>
-                <button onClick={() => alert("Refund Policy: All GAINS purchases and subscriptions are final. Due to the digital nature of the intel and blockchain transactions, we do not offer refunds.")} className="hover:text-blue-400 transition-colors">Refund Policy</button>
+         {/* 🔥 DINAMIČNI FOOTER: SKRIT SAMO V HUBU 🔥 */}
+          {activeTab !== 'community' && (
+            <footer className={`w-full max-w-7xl mx-auto mt-12 mb-6 p-8 rounded-[2.5rem] text-center transition-all pb-24 md:pb-6 relative overflow-hidden ${getGlassPanelClass(darkMode)}`}>
+              <div className="absolute -bottom-20 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-500/5 blur-[80px] pointer-events-none z-0"></div>
+              <div className="relative z-10">
+                <h4 className="text-xs font-black uppercase tracking-widest mb-4 text-red-500 drop-shadow-sm">⚠️ Institutional Risk Warning</h4>
+                <p className={`text-[10px] uppercase opacity-60 leading-relaxed text-justify md:text-center max-w-4xl mx-auto font-medium ${darkMode ? 'text-zinc-300' : 'text-zinc-600'}`}>
+                  Trading financial markets involves high risk. GainWave is a technological platform and does not provide financial advice. All trades are at your own discretion. You could lose some or all of your initial capital. Past performance is not indicative of future results.
+                </p>
+                <div className="flex flex-wrap justify-center gap-6 mt-8 opacity-60 text-[9px] font-black uppercase tracking-[0.2em]">
+                  <button onClick={() => alert("Terms of Service: GainWave is a software provider. By using this platform, you agree that you are solely responsible for your financial decisions and the risk associated with trading and investing in Web3 assets.")} className="hover:text-blue-400 transition-colors">Terms of Service</button>
+                  <button onClick={() => alert("Privacy Policy: Your data is encrypted. We do not sell your personal information to third parties. Data is used strictly for platform authentication and terminal access.")} className="hover:text-blue-400 transition-colors">Privacy Policy</button>
+                  <button onClick={() => alert("Refund Policy: All GAINS purchases and subscriptions are final. Due to the digital nature of the intel and blockchain transactions, we do not offer refunds.")} className="hover:text-blue-400 transition-colors">Refund Policy</button>
+                </div>
+                <div className="mt-6 pt-6 border-t border-zinc-500/20 text-[9px] font-bold opacity-40">© {new Date().getFullYear()} GAIN WAVE NETWORK. FORGED FOR ELITE TRADERS.</div>
               </div>
-              <div className="mt-6 pt-6 border-t border-zinc-500/20 text-[9px] font-bold opacity-40">© {new Date().getFullYear()} GAIN WAVE NETWORK. FORGED FOR ELITE TRADERS.</div>
-            </div>
-          </footer>
+            </footer>
+          )}
 
           {isLoggedIn && (
             <div className="md:hidden fixed bottom-4 left-2 right-2 z-[900]">
@@ -3322,6 +3522,15 @@ const sendPrivateMessage = async () => {
                   {(userData.is_developer ? activeTab === 'forge' : isTerminalActive) && (
                     <div className={`absolute -bottom-3 w-1.5 h-1.5 rounded-full ${dotColorBase}`} />
                   )}
+                </button>
+
+                {/* 🔥 NOVI GUMB ZA AKADEMIJO (MOBILNA NAPRAVA) 🔥 */}
+                <button onClick={() => setActiveTab('academy')} className="shrink-0 snap-center relative flex flex-col items-center gap-1.5 group">
+                  <svg className={getNavIconClass(activeTab === 'academy')} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14zm-4 6v-7.5l4-2.222" />
+                  </svg>
+                  <span className={getNavTextClass(activeTab === 'academy')}>Academy</span>
+                  {activeTab === 'academy' && <div className={`absolute -bottom-3 w-1.5 h-1.5 rounded-full ${dotColorBase}`} />}
                 </button>
 
                 <button onClick={() => setActiveTab('community')} className="shrink-0 snap-center relative flex flex-col items-center gap-1.5 group">

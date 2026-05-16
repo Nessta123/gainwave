@@ -120,6 +120,15 @@ const SignalCard = ({ payload, onCopy, isOwn }: { payload: any, onCopy: (data: a
                 </div>
             </div>
 
+            {/* 🔥 NOVO: TIMESTAMP SIGNAL 🔥 */}
+            {payload.created_at && (
+                <div className="px-3 pb-2 -mt-1">
+                    <p className="text-[8px] opacity-40 uppercase font-bold tracking-widest text-white">
+                        Last Update: {new Date(payload.created_at).toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </p>
+                </div>
+            )}
+
             {payload.content && (
                 <div className="px-3 pb-2">
                     <p className="text-[10px] text-zinc-400 italic">"{payload.content}"</p>
@@ -192,6 +201,7 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
 
   // 🔥 EMOJI PICKER STATE 🔥
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [showFullEmojiGrid, setShowFullEmojiGrid] = useState(false);
 
   const [showStylePicker, setShowStylePicker] = useState(false);
   const [tempColorA, setTempColorA] = useState("#1a1a1a");
@@ -221,8 +231,10 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
   
   const [appSettings, setAppSettings] = useState<any>({ subscription_price: 200 });
 
-  // 🔥 REF ZA SCROLLANJE ZNOTRAJ CHATA 🔥
+  // 🔥 REF IN SCROLL STATE ZA TELEGRAM SCROLL BEHAVIOR 🔥
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const [showScrollDown, setShowScrollDown] = useState(false);
+  const [missedMessagesCount, setMissedMessagesCount] = useState(0);
 
   const [showSignalPicker, setShowSignalPicker] = useState(false);
   const [mySignals, setMySignals] = useState<any[]>([]);
@@ -581,7 +593,7 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
           body: formData,
         });
 
-        if (!uploadRes.ok) throw new Error("Logo upload failed on Hetzner");
+        if (!uploadRes.ok) throw new Error("Logo upload failed on Hetzner server!");
         const uploadData = await uploadRes.json();
         finalLogoUrl = uploadData.url;
       }
@@ -809,23 +821,27 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
       .from('channel_members')
       .insert([{ channel_id: activeChannel.id, user_id: userData.id, role: 'member', expires_at: expiresAt }]);
       
-    if (!error) {
-      toast.success(`Joined #${activeChannel.name}!`);
+    // 🔥 FIX ZA DVOJNIKE IN OSVEŽEVANJE CACHE-a 🔥
+    if (!error || error.code === '23505') {
+      if (error?.code === '23505') {
+        toast.success(`Connection restored! Welcome back to #${activeChannel.name}`);
+      } else {
+        toast.success(`Joined #${activeChannel.name}!`);
+        if (topics.length > 0) {
+          await supabase.from('community_messages').insert([{
+            channel_id: activeChannel.id,
+            topic_id: topics[0].id,
+            author_id: userData.id,
+            author_alias: 'SYSTEM',
+            text: `👋 @${userData.alias} just joined the node #${activeChannel.name}! Welcome!`
+          }]);
+        }
+      }
       setIsMemberOfActive(true);
       setHasAccess(true);
       fetchMyChannels(); 
-      
-      if (topics.length > 0) {
-        await supabase.from('community_messages').insert([{
-          channel_id: activeChannel.id,
-          topic_id: topics[0].id,
-          author_id: userData.id,
-          author_alias: 'SYSTEM',
-          text: `👋 @${userData.alias} just joined the node #${activeChannel.name}! Welcome!`
-        }]);
-      }
     } else {
-        toast.error("Error joining node.");
+        toast.error("Error joining node: " + error.message);
     }
   };
 
@@ -860,7 +876,7 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
       });
 
       if (!uploadRes.ok) {
-        throw new Error("Napaka pri nalaganju slike na Hetzner strežnik!");
+        throw new Error("Error uploading image to Hetzner server!");
       }
 
       const uploadData = await uploadRes.json();
@@ -985,7 +1001,6 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
     if (!error) setSelectedMsgId(null);
   };
 
-  // 🔥 POSODOBLJENA LOGIKA ZA PINANJE - PREVERJANJE LIMITOV 🔥
   const handlePinMessage = async (msgId: string, currentPinnedStatus: boolean) => {
     const currentPins = messages.filter(m => m.is_pinned).length;
     
@@ -1030,7 +1045,33 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
   // 🔥 VSTAVI EMOJI V TEKST 🔥
   const insertEmoji = (emoji: string) => {
       setNewMessage(prev => prev + emoji);
-      setShowEmojiPicker(false);
+      setShowFullEmojiGrid(false);
+  };
+
+  // 🔥 OPK ZA TELEGRAM SCROLL BEHAVIOR 🔥
+  const handleChatScroll = () => {
+      if (!chatScrollRef.current) return;
+      const { scrollTop, scrollHeight, clientHeight } = chatScrollRef.current;
+      
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 300;
+      
+      if (isNearBottom) {
+          setShowScrollDown(false);
+          setMissedMessagesCount(0);
+      } else {
+          setShowScrollDown(true);
+      }
+  };
+
+  const scrollToBottom = () => {
+      if (chatScrollRef.current) {
+          chatScrollRef.current.scrollTo({
+              top: chatScrollRef.current.scrollHeight,
+              behavior: 'smooth'
+          });
+      }
+      setShowScrollDown(false);
+      setMissedMessagesCount(0);
   };
 
   useEffect(() => {
@@ -1082,6 +1123,17 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
             if (payload.new.topic_id === activeTopic.id) {
                 const { data: prof } = await supabase.from('profiles').select('alias, avatar_url, is_institutional, win_rate').eq('id', payload.new.author_id).single();
                 const fullMsg = { ...payload.new, profiles: prof };
+                
+                // Preverimo če uporabnik skrola in dodamo "Missed" counter
+                if (chatScrollRef.current) {
+                    const { scrollTop, scrollHeight, clientHeight } = chatScrollRef.current;
+                    const isNearBottom = scrollHeight - scrollTop - clientHeight < 300;
+                    
+                    if (!isNearBottom && payload.new.author_id !== userData.id) {
+                        setMissedMessagesCount(prev => prev + 1);
+                    }
+                }
+
                 setMessages(prev => [...prev, fullMsg]);
             } else {
                 setTopicUnread(prev => ({
@@ -1110,10 +1162,18 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
     return () => { supabase.removeChannel(channelSub); };
   }, [activeChannel, activeTopic, hasAccess, userData.alias, isMemberOfActive]);
 
-  // 🔥 POPRAVLJEN SCROLL MEHANIZEM 🔥
+  // 🔥 POPRAVLJEN SCROLL MEHANIZEM ZA NOVO SPOROČILO (Samo če si blizu dna) 🔥
   useEffect(() => { 
     if (chatScrollRef.current) {
-        chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+        const { scrollTop, scrollHeight, clientHeight } = chatScrollRef.current;
+        const isNearBottom = scrollHeight - scrollTop - clientHeight < 300;
+        
+        // Ali je uporabnik sam poslal zadnje sporočilo?
+        const lastMsgIsMine = messages.length > 0 && messages[messages.length - 1].author_id === userData.id;
+
+        if (isNearBottom || lastMsgIsMine) {
+            chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+        }
     }
   }, [messages.length, activeTopic]);
 
@@ -1141,6 +1201,7 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
     setNewMessage(""); 
     setReplyingToMsg(null);
     setShowMentionMenu(false);
+    setShowFullEmojiGrid(false);
 
     try {
       const { error } = await supabase.from('community_messages').insert([{
@@ -1336,7 +1397,8 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
           take_profit: signal.take_profit || signal.tp_price, 
           stop_loss: signal.stop_loss || signal.sl_price,
           content: signal.text || signal.content,
-          allow_copy: signal.is_copyable 
+          allow_copy: signal.is_copyable,
+          created_at: signal.created_at || new Date().toISOString() // 🔥 DODAN TIMESTAMP 🔥
       };
 
       const msg = `[GW_SIGNAL_PAYLOAD]${JSON.stringify(payload)}`;
@@ -1388,7 +1450,7 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
       setCopyModalPost(null); 
       setCopyRiskValue("1");
     } catch (err: any) {
-      console.error("Napaka pri kopiranju:", err);
+      console.error("Copy error:", err);
       toast.error("System copy error: " + err.message);
     }
   };
@@ -1402,7 +1464,7 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
   const pinnedMessages = messages.filter(m => m.is_pinned);
 
   return (
-    <div className="flex flex-col w-full flex-1 h-[calc(100dvh-70px)] md:h-[calc(100vh-80px)] gap-2 md:gap-4 relative animate-in fade-in slide-in-from-bottom-2 duration-500 overflow-hidden" onClick={() => setSelectedMsgId(null)}>
+    <div className="flex flex-col w-full flex-1 h-[calc(100dvh-70px)] md:h-[calc(100vh-80px)] gap-2 md:gap-4 relative animate-in fade-in slide-in-from-bottom-2 duration-500 overflow-hidden" onClick={() => { setSelectedMsgId(null); setShowFullEmojiGrid(false); }}>
       
       <div className={`${activeChannel ? 'hidden md:block' : 'block'} shrink-0 px-2 pt-2 md:pt-0`}>
         <StoryBar userData={userData} darkMode={darkMode} />
@@ -1490,10 +1552,13 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
 
       {modTarget && (
         <div className="fixed inset-0 z-[3000] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in" onClick={() => setModTarget(null)}>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-2xl w-64 shadow-2xl overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
-                <div className="p-4 border-b border-zinc-800 bg-black/50 text-center">
-                    <p className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Manage Node User</p>
-                    <p className="text-sm font-black text-white mt-1">{modTarget.alias}</p>
+            <div className="bg-zinc-950 border border-zinc-800 rounded-2xl w-64 shadow-2xl overflow-hidden animate-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50 shrink-0">
+                    <p className="text-[10px] font-black uppercase text-blue-500 tracking-widest">Manage User</p>
+                    <button onClick={() => setModTarget(null)} className="text-zinc-500 hover:text-white transition-colors">✕</button>
+                </div>
+                <div className="p-4 text-center border-b border-zinc-800">
+                    <p className="text-sm font-black text-white">{modTarget.alias}</p>
                     {modTarget.win_rate !== undefined && (<div className={`text-[11px] font-bold uppercase mt-1.5 ${modTarget.win_rate >= 80 ? 'text-yellow-500' : 'text-green-400'}`}>🏆 Win Rate: {modTarget.win_rate}%</div>)}
                 </div>
                 <div className="flex flex-col">
@@ -1833,7 +1898,6 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
                           {activeChannel.is_premium && <span className="text-[7px] md:text-[8px] bg-yellow-500 text-black px-1.5 rounded font-black shrink-0">VIP</span>}
                         </h2>
                         
-                        {/* 🔥 SPREMENJEN ZGORNJI GUMB ZA ONLINE/MEMBERS 🔥 */}
                         <div 
                             className="text-[9px] md:text-[10px] text-zinc-400 font-bold uppercase tracking-widest truncate cursor-pointer hover:text-white flex items-center gap-1.5 transition-colors"
                             onClick={() => { if(isMemberOfActive) setShowOnlineUsers(true); }}
@@ -1867,7 +1931,6 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
                         </button>
                       )}
                       
-                      {/* 🔥 GUMB ZA ZAPUSTITEV KANALA 🔥 */}
                       {isMemberOfActive && activeChannel.owner_id !== userData.id && (
                         <button onClick={handleLeaveChannel} className="text-zinc-400 hover:text-red-500 transition-colors" title="Leave Channel">
                           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>
@@ -1975,8 +2038,13 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
 
               {isMemberOfActive ? (
                 <>
-                  {/* 🔥 CHAT MESSAGE AREA - Z REF-OM ZA PRAVILNO SCROLLANJE ZNOTRAJ DIVA 🔥 */}
-                  <div ref={chatScrollRef} className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-2 md:space-y-3 custom-scrollbar bg-black/10 pt-36 pb-40 md:pb-48 relative" onClick={() => setSelectedMsgId(null)}>
+                  {/* 🔥 CHAT MESSAGE AREA - Z REF-OM ZA PRAVILNO SCROLLANJE IN TELEGRAM JUMP-TO-BOTTOM 🔥 */}
+                  <div 
+                      ref={chatScrollRef} 
+                      onScroll={handleChatScroll}
+                      className="flex-1 min-h-0 overflow-y-auto p-3 md:p-4 space-y-2 md:space-y-3 custom-scrollbar bg-black/10 pt-36 pb-[160px] md:pb-[180px] relative" 
+                      onClick={() => { setSelectedMsgId(null); setShowFullEmojiGrid(false); }}
+                  >
                     {messages.map((m: any, i) => {
                       const isMe = m.author_id === userData.id;
                       const isMsgAuthorInstitutional = m.profiles?.is_institutional === true;
@@ -2131,29 +2199,29 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
                                       </>
                                   )}
 
-                                  {/* 🔥 ACTION MENU (Prikaže se pod oblačkom, ko klikneš) - POPRAVLJEN ZA MOBILE & DESKTOP 🔥 */}
+                                  {/* 🔥 ACTION MENU (Prikaže se pod oblačkom, ko klikneš) - OČIŠČEN UI 🔥 */}
                                   {isSelected && (
                                     <div className={`absolute ${isMe ? 'right-0 md:mr-10' : 'left-0 md:ml-10'} top-full mt-1 flex flex-wrap items-center justify-end gap-1 bg-zinc-800/95 backdrop-blur rounded-lg p-1.5 z-50 border border-zinc-700 shadow-2xl min-w-[200px]`}>
-                                      {/* EMOJI BAR */}
+                                      {/* EMOJI BAR Z VEČ EMOJIJI */}
                                       <div className="flex flex-wrap justify-center gap-1 border-b md:border-b-0 md:border-r border-zinc-700 pb-1 md:pb-0 md:pr-1 w-full md:w-auto">
-                                        {['👍', '🔥', '🚀', '📉', '🤝'].map(emoji => (
+                                        {['👍', '🔥', '🚀', '📉', '🤝', '❌', '🚫', '🤡', '⚠️'].map(emoji => (
                                            <button key={emoji} onClick={(e) => { e.stopPropagation(); handleReaction(m.id, emoji, reactions); }} className="p-1.5 hover:bg-zinc-700 rounded transition-transform hover:scale-110 active:scale-95 text-base md:text-sm">{emoji}</button>
                                         ))}
                                       </div>
 
                                       <div className="flex items-center gap-1 w-full md:w-auto justify-end pt-1 md:pt-0">
-                                        <button onClick={(e) => { e.stopPropagation(); setReplyingToMsg(m); setSelectedMsgId(null); }} className="text-zinc-300 hover:text-white text-[10px] px-2 py-1.5 rounded hover:bg-zinc-700 font-bold uppercase tracking-widest flex-1 md:flex-none text-center">↩️ Reply</button>
+                                        <button onClick={(e) => { e.stopPropagation(); setReplyingToMsg(m); setSelectedMsgId(null); }} className="text-zinc-300 hover:text-white text-[10px] px-2 py-1.5 rounded hover:bg-zinc-700 font-bold uppercase tracking-widest flex-1 md:flex-none text-center transition-colors">↩️ Reply</button>
                                         
                                         {isOwner && (
-                                          <button onClick={(e) => { e.stopPropagation(); handlePinMessage(m.id, m.is_pinned); }} className="text-zinc-300 hover:text-blue-400 text-[10px] px-2 py-1.5 rounded hover:bg-zinc-700 font-bold uppercase tracking-widest flex-1 md:flex-none text-center">
-                                             {m.is_pinned ? 'Unpin' : '📌 Pin'}
+                                          <button onClick={(e) => { e.stopPropagation(); handlePinMessage(m.id, m.is_pinned); }} className="text-zinc-300 hover:text-white text-[10px] px-2 py-1.5 rounded hover:bg-zinc-700 font-bold uppercase tracking-widest flex-1 md:flex-none text-center transition-colors">
+                                              {m.is_pinned ? 'Unpin' : '📌 Pin'}
                                           </button>
                                         )}
 
                                         {canDelete && !signalPayload && (
                                           <>
-                                            {isMe && <button onClick={(e) => { e.stopPropagation(); setEditingMsgId(m.id); setEditingMsgText(displayMessage); setSelectedMsgId(null); }} className="text-zinc-300 hover:text-white text-[10px] px-2 py-1.5 rounded hover:bg-zinc-700 font-bold uppercase tracking-widest flex-1 md:flex-none text-center">✏️ Edit</button>}
-                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteMessage(m.id, m.author_id); }} className="text-red-400 hover:text-red-300 text-[10px] px-2 py-1.5 rounded hover:bg-red-900/30 font-bold uppercase tracking-widest flex-1 md:flex-none text-center">🗑️ Del</button>
+                                            {isMe && <button onClick={(e) => { e.stopPropagation(); setEditingMsgId(m.id); setEditingMsgText(displayMessage); setSelectedMsgId(null); }} className="text-zinc-300 hover:text-white text-[10px] px-2 py-1.5 rounded hover:bg-zinc-700 font-bold uppercase tracking-widest flex-1 md:flex-none text-center transition-colors">✏️ Edit</button>}
+                                            <button onClick={(e) => { e.stopPropagation(); handleDeleteMessage(m.id, m.author_id); }} className="text-zinc-300 hover:text-red-400 text-[10px] px-2 py-1.5 rounded hover:bg-zinc-700 font-bold uppercase tracking-widest flex-1 md:flex-none text-center transition-colors">🗑️ Delete</button>
                                           </>
                                         )}
                                       </div>
@@ -2180,8 +2248,24 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
                     })}
                   </div>
                   
+                  {/* 🔥 TELEGRAM PUŠČICA ZA JUMP TO BOTTOM 🔥 */}
+                  {showScrollDown && (
+                      <button 
+                          onClick={scrollToBottom}
+                          className="absolute bottom-[140px] md:bottom-[160px] right-4 z-40 w-10 h-10 bg-zinc-800/80 backdrop-blur-md rounded-full border border-white/10 flex items-center justify-center text-white shadow-xl hover:bg-zinc-700 transition-all active:scale-95"
+                      >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 14l-7 7m0 0l-7-7m7 7V3"></path></svg>
+                          
+                          {missedMessagesCount > 0 && (
+                              <div className="absolute -top-1 -right-1 bg-blue-500 text-white text-[10px] font-black w-5 h-5 flex items-center justify-center rounded-full shadow-md">
+                                  {missedMessagesCount}
+                              </div>
+                          )}
+                      </button>
+                  )}
+
                   {/* 🔥 FLOATING INPUT AREA 🔥 */}
-                  <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-auto bg-black/60 backdrop-blur-xl border-t border-white/5 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
+                  <div className="absolute bottom-0 left-0 right-0 z-30 pointer-events-auto bg-black/80 backdrop-blur-2xl border-t border-white/5 shadow-[0_-10px_30px_rgba(0,0,0,0.5)]">
                     
                     {/* PRIKAZ AKTIVNEGA REPLY-ja NAD INPUTOM */}
                     {replyingToMsg && (
@@ -2189,21 +2273,35 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
                         <div className="flex flex-col border-l-2 border-blue-500 pl-2 overflow-hidden">
                           <span className="font-bold text-blue-400 text-[10px] uppercase">Replying to {replyingToMsg.profiles?.alias || replyingToMsg.author_alias}</span>
                           <span className="text-zinc-400 truncate opacity-80 text-[11px]">
-                             {replyingToMsg.text.startsWith('> Replying to') ? replyingToMsg.text.split('\n\n').slice(1).join('\n\n').substring(0, 40) : replyingToMsg.text.substring(0, 40)}...
+                              {replyingToMsg.text.startsWith('> Replying to') ? replyingToMsg.text.split('\n\n').slice(1).join('\n\n').substring(0, 40) : replyingToMsg.text.substring(0, 40)}...
                           </span>
                         </div>
                         <button onClick={() => setReplyingToMsg(null)} className="p-1 text-zinc-500 hover:text-white shrink-0">✕</button>
                       </div>
                     )}
 
-                    {/* 🔥 EMOJI PICKER DROPDOWN 🔥 */}
+                    {/* 🔥 EMOJI PICKER DROPDOWN Z VEČ EMOJIJI IN PLUS GUMBOM 🔥 */}
                     {showEmojiPicker && (
-                      <div className="absolute bottom-full right-4 mb-2 bg-zinc-900 border border-zinc-700 rounded-2xl p-2 shadow-2xl z-50 flex flex-wrap w-64 gap-1">
+                      <div className="absolute bottom-full left-4 mb-2 bg-zinc-900 border border-zinc-700 rounded-2xl p-2 shadow-2xl z-50 flex flex-wrap max-w-[280px] gap-1">
                         {['😀','😂','🥰','😎','🤔','😡','🚀','🔥','📉','📈','🤝','👀','💯','💎','💸'].map(emoji => (
                           <button key={emoji} onClick={() => insertEmoji(emoji)} className="p-2 hover:bg-zinc-700 rounded-lg text-xl transition-transform hover:scale-110 active:scale-95">
                             {emoji}
                           </button>
                         ))}
+                        <button onClick={() => setShowFullEmojiGrid(!showFullEmojiGrid)} className="p-2 hover:bg-zinc-700 rounded-lg text-lg text-zinc-400 transition-colors">
+                           ➕
+                        </button>
+                        
+                        {/* EXTENDED EMOJI GRID */}
+                        {showFullEmojiGrid && (
+                            <div className="w-full mt-2 pt-2 border-t border-zinc-700 flex flex-wrap gap-1 max-h-32 overflow-y-auto custom-scrollbar">
+                                {['👍','👎','👏','🙌','🙏','💪','🧠','⚡','🧊','❄️','🌊','🌊','🌪️','☀️','🌞','⭐','🌟','✨','💫','🌙','🌜','🌛','🌍','🌎','🌏','🌑','🌒','🌓','🌔','🌕','🌖','🌗','🌘','🌙','🌚','🌛','🌜','🌡️','💧','☔','⚡','⛄','🔥','💥','✅','❌','🔴','🟢','🔵','🟡','🟣','⚫','⚪','🟤'].map(emoji => (
+                                    <button key={emoji} onClick={() => insertEmoji(emoji)} className="p-1 hover:bg-zinc-700 rounded text-lg transition-transform hover:scale-110 active:scale-95">
+                                        {emoji}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                       </div>
                     )}
 
@@ -2224,15 +2322,15 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
                     )}
 
                     <div className="p-2 md:p-3 flex items-end gap-2 pb-safe relative">
-                      <label className={`text-zinc-400 hover:text-blue-500 cursor-pointer p-2 shrink-0 ${uploadingFile ? 'animate-pulse text-blue-500' : ''}`} title="Upload File">
-                         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
-                         <input type="file" accept="image/*, .pdf, .zip, .rar" className="hidden" onChange={handleChatFileUpload} disabled={uploadingFile} />
-                      </label>
-                      <button onClick={handleOpenSignalPicker} className="text-zinc-400 hover:text-green-500 p-2 shrink-0 transition-colors" title="Share Active Signal">
-                          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
-                      </button>
                       
-                      <div className="flex-1 relative bg-zinc-900/80 border border-zinc-700/50 rounded-2xl flex items-center pr-1 overflow-hidden shadow-inner">
+                      <div className="flex items-center gap-1 shrink-0">
+                          {/* 🔥 GUMB ZA EMOJIJE 🔥 */}
+                          <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className={`p-2 transition-colors ${showEmojiPicker ? 'text-yellow-400' : 'text-zinc-500 hover:text-white'}`}>
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                          </button>
+                      </div>
+
+                      <div className="flex-1 relative bg-black/40 border border-zinc-700/50 rounded-2xl flex items-center pr-1 overflow-hidden shadow-inner focus-within:border-blue-500/50 transition-colors">
                         <textarea 
                           className="w-full bg-transparent px-3 py-3 outline-none text-sm text-white placeholder-zinc-500 resize-none max-h-32 min-h-[44px] custom-scrollbar" 
                           placeholder={uploadingFile ? "Uploading..." : `Message (@ to mention)`} 
@@ -2247,18 +2345,22 @@ export default function CommunityView({ userData, darkMode, onBack, isOwnProfile
                         />
                         
                         <div className="flex items-center shrink-0 pr-1 gap-1">
-                          {/* 🔥 GUMB ZA EMOJIJE 🔥 */}
-                          <button onClick={() => setShowEmojiPicker(!showEmojiPicker)} className="p-2 text-zinc-400 hover:text-yellow-400 transition-colors">
-                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                          <label className={`text-zinc-500 hover:text-white cursor-pointer p-1.5 shrink-0 transition-colors ${uploadingFile ? 'animate-pulse text-blue-500' : ''}`} title="Upload File">
+                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13"></path></svg>
+                             <input type="file" accept="image/*, .pdf, .zip, .rar" className="hidden" onChange={handleChatFileUpload} disabled={uploadingFile} />
+                          </label>
+                          <button onClick={handleOpenSignalPicker} className="text-zinc-500 hover:text-green-400 p-1.5 shrink-0 transition-colors" title="Share Active Signal">
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"></path></svg>
                           </button>
-
-                          {newMessage.trim() && (
-                            <button onClick={handleSendMessage} disabled={newMessage.length > charLimit} className="p-2 text-blue-500 hover:text-blue-400 transition-colors disabled:opacity-20 mr-1">
-                              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" /></svg>
-                            </button>
-                          )}
                         </div>
                       </div>
+
+                      {newMessage.trim() && (
+                        <button onClick={handleSendMessage} disabled={newMessage.length > charLimit} className="p-3 shrink-0 bg-blue-600 text-white rounded-full hover:bg-blue-500 transition-colors disabled:opacity-50">
+                          <svg className="w-5 h-5 -ml-0.5" fill="currentColor" viewBox="0 0 20 20"><path d="M10.894 2.553a1 1 0 00-1.788 0l-7 14a1 1 0 001.169 1.409l5-1.429A1 1 0 009 15.571V11a1 1 0 112 0v4.571a1 1 0 00.725.962l5 1.428a1 1 0 001.17-1.408l-7-14z" /></svg>
+                        </button>
+                      )}
+
                     </div>
                   </div>
                 </>

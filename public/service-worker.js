@@ -1,8 +1,8 @@
-// 🔥 POSODOBLJENO NA v13: NINJA SYNC & FOREGROUND MUTE 🔥
-const CACHE_NAME = 'gainwave-v13-ninja-sync';
+// 🔥 POSODOBLJENO NA v12: GAINWAVE DOMAIN ENFORCER
+const CACHE_NAME = 'gainwave-v12'; // Povečano na v12 za prisilno posodobitev
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting(); // Prisilna takojšnja namestitev
+  self.skipWaiting(); 
 });
 
 self.addEventListener('activate', (event) => {
@@ -11,92 +11,89 @@ self.addEventListener('activate', (event) => {
       return Promise.all(
         cacheNames.map((cache) => {
           if (cache !== CACHE_NAME) {
-            return caches.delete(cache); // Zbrišemo staro nesnago
+            return caches.delete(cache);
           }
         })
       );
     })
   );
-  return self.clients.claim(); // Takoj prevzame kontrolo nad vsemi odprtimi zavihki
+  return self.clients.claim();
 });
 
-// 🔥 PUSH EVENT S PAMETNIM UTIŠANJEM (FOREGROUND MUTE) 🔥
+// 🔥 UNIVERZALNA PUSH LOGIKA (Prisilna Gainwave domena)
 self.addEventListener('push', function(event) {
-  console.log('📡 [NINJA SYNC] Push signal zaznan na telefonu!');
-
-  if (!event.data) {
-    console.error('❌ [NINJA SYNC] Prazen signal.');
-    return;
-  }
-
-  let data = {};
-  try {
-    data = event.data.json();
-    console.log('✅ [NINJA SYNC] Podatki prebrani:', data);
-  } catch (e) {
-    data = { title: "GainWave Terminal", body: event.data.text() };
-  }
-
-  // BULLETPROOF URL
-  const baseUrl = self.location.origin;
-  let targetUrl = data.url ? data.url : '/';
-  if (!targetUrl.startsWith('http')) {
-     targetUrl = baseUrl + (targetUrl.startsWith('/') ? targetUrl : '/' + targetUrl);
-  }
-
-  // AGRESIVNA LOGIKA
-  const isCritical = data.type === 'master_signal' || data.title?.includes('🚨') || data.title?.includes('🎯');
-  const vibrationPattern = isCritical ? [500, 200, 500, 200, 1000] : [200, 100, 200];
-
-  const options = {
-    body: data.body || 'Nova aktivnost na terminalu.',
-    icon: '/AppIcon.png',
-    badge: '/AppIcon.png',
-    tag: data.type || 'ghost-sync-update',
-    renotify: true,
-    vibrate: vibrationPattern,
-    requireInteraction: isCritical,
-    data: { url: targetUrl }
+  let data = { 
+    title: 'Gainwave Terminal', 
+    body: 'Nova posodobitev na trgu.', 
+    url: 'https://gain-wave.com' 
   };
 
-  // 🛑 TUKAJ JE PAMETNA LOGIKA: Preverimo, če aplikacija že teče v ospredju
+  if (event.data) {
+    try {
+      data = event.data.json();
+    } catch (e) {
+      data.body = event.data.text();
+    }
+  }
+
+  // 🔥 KLJUČNI POPRAVEK: Prisilna zamenjava starega Vercel linka
+  let finalUrl = data.url || 'https://gain-wave.com';
+  if (finalUrl.includes('vercel.app')) {
+    // Če API pošlje npr. ticker-talker.vercel.app/profile, to spremenimo v gain-wave.com/profile
+    finalUrl = finalUrl.replace(/.*vercel\.app/, 'https://gain-wave.com');
+  } else if (finalUrl.startsWith('/')) {
+    // Če je link samo "/view", mu dodamo domeno
+    finalUrl = 'https://gain-wave.com' + finalUrl;
+  }
+
+  const title = data.title || 'Gainwave';
+  const body = data.body || '';
+  const icon = '/AppIcon.png';
+  
+  let vibratePattern = [200, 100, 200];
+
+  // Ekskluzivna vibra za Gainwave Alphe
+  if (title.includes('🎯') || title.includes('Signal') || title.includes('Alpha')) {
+    vibratePattern = [500, 110, 500, 110, 500, 110, 1000];
+  }
+
+  const options = {
+    body: body,
+    icon: icon,
+    badge: icon,
+    tag: data.tag || 'gw-notification',
+    vibrate: vibratePattern,
+    requireInteraction: true, 
+    data: {
+      url: finalUrl
+    },
+    actions: [
+      { action: 'open', title: 'Odpri Terminal' }
+    ]
+  };
+
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      let isAppFocused = false;
-
-      for (let i = 0; i < windowClients.length; i++) {
-        if (windowClients[i].focused) {
-          isAppFocused = true;
-          break;
-        }
-      }
-
-      if (isAppFocused) {
-        console.log('📱 [NINJA SYNC] Aplikacija je odprta v ospredju. Sistemsko obvestilo UTIŠANO.');
-        return null; // Aplikacija je odprta, ne prikaži Push okenca!
-      } else {
-        console.log('🔔 [NINJA SYNC] Aplikacija je v ozadju. Prikazujem obvestilo...');
-        return self.registration.showNotification(data.title || 'GainWave Protocol', options);
-      }
-    }).catch((err) => console.error('❌ [NINJA SYNC] Napaka pri prikazu obvestila:', err))
+    self.registration.showNotification(title, options)
   );
 });
 
-// 🔥 KLIK NA OBVESTILO (Odpre PWA namesto novega zavihka) 🔥
 self.addEventListener('notificationclick', function(event) {
-  event.notification.close(); // Najprej zapremo obvestilo
+  event.notification.close();
   
-  const targetUrl = event.notification.data.url || self.location.origin;
+  let targetUrl = event.notification.data.url || '/';
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
-      // 1. Poskusi najti že odprt zavihek aplikacije in ga potegni v ospredje
+      // 1. Preiščemo vse odprte zavihke PWA aplikacije (uporaba self.location.origin)
       for (let client of clientList) {
-        if (client.url.includes(self.location.origin) && 'focus' in client) {
-          return client.focus().then(() => client.navigate(targetUrl)); 
+        if (client.url.startsWith(self.location.origin) && 'focus' in client) {
+          // Focus je asinhron! Najprej fokusiramo, nato navigiramo
+          return client.focus().then(c => {
+            return (c || client).navigate(targetUrl);
+          });
         }
       }
-      // 2. Če aplikacija sploh ni odprta, jo odpri od nule na pravem linku
+      // 2. Če PWA res ni odprt nikjer v ozadju, šele takrat odpremo novo okno
       if (clients.openWindow) {
         return clients.openWindow(targetUrl);
       }
@@ -104,11 +101,11 @@ self.addEventListener('notificationclick', function(event) {
   );
 });
 
-// 🔥 FETCH EVENT (Strict Bypass za API in bazo) 🔥
+// 🔥 Fetch handler (Brez cachiranja za API)
 self.addEventListener('fetch', function(event) {
   if (event.request.method !== 'GET') return;
 
-  if (event.request.url.includes('/api/') || event.request.url.includes('supabase.co')) {
+  if (event.request.url.includes('/supabase') || event.request.url.includes('/api/')) {
     event.respondWith(fetch(event.request));
     return;
   }

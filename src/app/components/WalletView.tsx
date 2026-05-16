@@ -192,7 +192,10 @@ export default function WalletView({ userData, darkMode, onPromote, setActiveCha
 
   // 🔥 NOVO: KUPITEV PRO NODE S KOVANCI (GAINS) 🔥
   const handleUpgradeWithGains = async (cost: number) => {
-    if ((userData.gains_balance || 0) < cost) {
+    // 🔥 POGLEDAMO OBA BALANCA: PRVO BONUS, POTEM BULLS 🔥
+    const totalGains = (userData.gains_balance || 0) + (userData.bonus_balance || 0);
+
+    if (totalGains < cost) {
       toast.error("Insufficient GAINS! Please acquire more first.");
       return;
     }
@@ -203,10 +206,33 @@ export default function WalletView({ userData, darkMode, onPromote, setActiveCha
     const toastId = toast.loading("Processing quantum transaction...");
 
     try {
-      // 1. Odštejemo balans v tabeli user_balances (strogo iz bulls_balance!)
+      let remainingCost = cost;
+      let newBonusBal = userData.bonus_balance || 0;
+      let newBullsBal = userData.gains_balance || 0;
+
+      // Najprej porabimo BONUS GAINS (ker so darilo in jih ne more izplačati)
+      if (newBonusBal > 0) {
+          if (newBonusBal >= remainingCost) {
+              newBonusBal -= remainingCost;
+              remainingCost = 0;
+          } else {
+              remainingCost -= newBonusBal;
+              newBonusBal = 0;
+          }
+      }
+
+      // Preostanek porabimo iz KUPLJENIH (bulls_balance)
+      if (remainingCost > 0) {
+          newBullsBal -= remainingCost;
+      }
+
+      // 1. Odštejemo balanc v tabeli user_balances
       const { error: balanceErr } = await supabase
         .from('user_balances')
-        .update({ bulls_balance: userData.gains_balance - cost })
+        .update({ 
+            bulls_balance: newBullsBal,
+            bonus_balance: newBonusBal 
+        })
         .eq('user_id', userData.id);
 
       if (balanceErr) throw balanceErr;
@@ -662,19 +688,20 @@ export default function WalletView({ userData, darkMode, onPromote, setActiveCha
           </button>
         </div>
 
-        {/* USDT VAULT */}
+        {/* 🔥 NOVO: LOYALTY VAULT (BONUS GAINS) 🔥 */}
         <div className={`relative overflow-hidden p-8 rounded-[3rem] border transition-all duration-500 hover:-translate-y-1 ${
-          darkMode ? 'bg-[#050509]/80 backdrop-blur-xl border-green-500/30 shadow-[0_0_40px_rgba(34,197,94,0.1)_inset] hover:shadow-[0_0_60px_rgba(34,197,94,0.2)_inset]' : 'bg-white border-green-200 shadow-xl'
+          darkMode ? 'bg-[#050509]/80 backdrop-blur-xl border-[#FF00FF]/30 shadow-[0_0_40px_rgba(255,0,255,0.1)_inset] hover:shadow-[0_0_60px_rgba(255,0,255,0.2)_inset]' : 'bg-white border-purple-300 shadow-xl'
         }`}>
-          <div className="absolute -top-10 -right-10 w-40 h-40 bg-green-500/10 blur-[50px] rounded-full pointer-events-none" />
-          <span className="text-3xl mb-4 block drop-shadow-[0_0_15px_rgba(34,197,94,0.5)]">💵</span>
-          <h2 className="text-[9px] font-black uppercase tracking-[0.4em] mb-2 text-green-500/80">Web3 Vault (USDT)</h2>
-          <div className={`text-4xl font-black font-mono tracking-tighter ${darkMode ? 'text-green-400 drop-shadow-[0_0_20px_rgba(74,222,128,0.6)]' : 'text-green-600'}`}>
-            ${parseFloat(usdtBalance).toFixed(2)}
+          <div className="absolute -top-10 -right-10 w-40 h-40 bg-[#FF00FF]/10 blur-[50px] rounded-full pointer-events-none" />
+          <span className="text-3xl mb-4 block drop-shadow-[0_0_15px_rgba(255,0,255,0.5)]">🌟</span>
+          <div className="flex flex-col">
+            <h2 className="text-[9px] font-black uppercase tracking-[0.4em] mb-2 text-[#FF00FF]/80">Loyalty Vault</h2>
+            <div className={`text-5xl font-black font-mono tracking-tighter ${darkMode ? 'text-[#FF00FF] drop-shadow-[0_0_20px_rgba(255,0,255,0.6)]' : 'text-purple-600'}`}>
+              {(userData.bonus_balance || 0).toFixed(1)}
+            </div>
+            <p className="text-[7px] font-bold uppercase tracking-widest mt-4 opacity-50 text-[#FF00FF]">Non-Withdrawable</p>
+            <p className="text-[7px] font-bold uppercase tracking-widest mt-1 opacity-40 text-zinc-400">Use for PRO Upgrades & Boosts</p>
           </div>
-          <p className="text-[7px] font-bold mt-5 opacity-40 uppercase tracking-[0.3em] flex items-center gap-1.5">
-            <span className="w-1.5 h-1.5 bg-green-500 rounded-full inline-block" /> Polygon Network
-          </p>
         </div>
 
         {/* HFT NODE PROFIT VAULT */}

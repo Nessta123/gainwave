@@ -49,8 +49,10 @@ interface Post {
   bears?: number;
   is_institutional?: boolean; 
   is_boosted?: boolean; 
-  hub_id?: string; // Dodano za Hub povezavo
+  hub_id?: string; 
   is_boosted_ad?: boolean; // 🔥 NOVO: Da feed prepozna, da gre za plačan Inject
+  ad_type?: string;        // 🔥 NOVO: "boost" ali "wallet_ad"
+  link?: string;           // 🔥 NOVO: URL za wallet oglase
 }
 
 interface GlobalFeedProps {
@@ -114,20 +116,26 @@ export default function GlobalFeed({
   const [subscribedTraderIds, setSubscribedTraderIds] = useState<string[]>([]);
   const [boostModalPost, setBoostModalPost] = useState<Post | null>(null);
 
-  // 🔥 NOVO: MARKETING INJECTOR LOGIKA (Vsaka 15 objava je reklama) 🔥
+  // 🔥 POPRAVLJENO: PAMETNI MARKETING INJECTOR (BREZ BLOKATORJA) 🔥
   const injectBoostedPosts = (normalPosts: Post[], ads: Post[]) => {
     if (!ads || ads.length === 0) return normalPosts;
     
+    // Če je feed prazen, vrnemo samo oglase takoj
+    if (!normalPosts || normalPosts.length === 0) {
+        return ads.map(ad => ({ ...ad, is_boosted_ad: true }));
+    }
+
     const combinedFeed: Post[] = [];
     let adIndex = 0;
 
     normalPosts.forEach((post, index) => {
       combinedFeed.push(post);
       
-      // Vstavi reklamo po vsakih 14 objavah (torej na 15. mesto)
-      if ((index + 1) % 14 === 0 && ads[adIndex]) {
+      // Oglas vrinemo TAKOJ po 1. objavi (index 0) in potem na vsake 3 objave
+      if ((index === 0 || (index + 1) % 3 === 0) && ads.length > 0) {
+        // TUKAJ JE BILA NAPAKA! Odstranjen .find() pogoj.
         combinedFeed.push({ ...ads[adIndex], is_boosted_ad: true });
-        adIndex = (adIndex + 1) % ads.length; // Loop čez reklame, če jih zmanjka
+        adIndex = (adIndex + 1) % ads.length; // Loop čez reklame
       }
     });
 
@@ -361,12 +369,14 @@ export default function GlobalFeed({
       expiresAt.setHours(expiresAt.getHours() + durationHours);
 
       const { error: postErr } = await supabase
-        .from('posts')
-        .update({ 
-          is_boosted: true, 
-          boost_expires_at: expiresAt.toISOString() 
-        })
-        .eq('id', boostModalPost.id);
+        .from('boosted_posts')
+        .insert([{
+          user_id: userData.id,
+          post_id: boostModalPost.id,
+          start_date: new Date().toISOString(),
+          end_date: expiresAt.toISOString(),
+          is_active: true
+        }]);
 
       if (postErr) throw postErr;
 
@@ -593,6 +603,9 @@ export default function GlobalFeed({
             const authorHasStory = userStoriesMap[post.user_id] && userStoriesMap[post.user_id].length > 0;
             
             const isBoostedAd = post.is_boosted_ad || post.is_boosted;
+            
+            // 🔥 DETEKCIJA WALLET OGLASA 🔥
+            const isWalletAd = post.ad_type === 'wallet_ad';
 
             const contentStr = post.text || post.content || "";
             const isForgeAlert = isForgePost(contentStr);
@@ -611,6 +624,7 @@ export default function GlobalFeed({
                         : getGlassPanelClass(darkMode)
                 } ${isClosed ? 'opacity-80' : ''}`}
               >
+                 {/* Delete button (Ne prikažemo za oglase) */}
                  {isMe && !isBoostedAd && (
                    <button 
                      onClick={(e) => { 
@@ -640,7 +654,7 @@ export default function GlobalFeed({
                          alt="Market Intel" 
                          className={`w-full h-full object-cover transition-all duration-700 ${isClosed ? 'grayscale opacity-50' : 'opacity-90 group-hover/img:opacity-100 group-hover/img:scale-105'}`} 
                        />
-                       {post.entry && !isClosed && (
+                       {post.entry && !isClosed && !isWalletAd && (
                            <div className="absolute top-2 left-2 flex items-center gap-1.5 bg-black/60 backdrop-blur-md px-2 py-1 rounded-lg border border-white/10 shadow-lg">
                               <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${isPending ? 'bg-yellow-500 shadow-[0_0_5px_#eab308]' : 'bg-blue-500 shadow-[0_0_5px_#3b82f6]'}`}></div>
                               <span className="text-[7px] text-white font-black uppercase tracking-widest">
@@ -731,7 +745,7 @@ export default function GlobalFeed({
                                   )}
                                 </div>
                                 <span className="text-[7px] opacity-50 font-mono uppercase leading-none mt-1">
-                                  {new Date(post.created_at).toLocaleDateString('sl-SI')} • {new Date(post.created_at).toLocaleTimeString('sl-SI', {hour: '2-digit', minute:'2-digit'})}
+                                  {new Date(post.created_at).toLocaleDateString('en-US')} • {new Date(post.created_at).toLocaleTimeString('en-US', {hour: '2-digit', minute:'2-digit'})}
                                 </span>
                               </div>
                             </div>
@@ -750,7 +764,7 @@ export default function GlobalFeed({
                           </div>
 
                           <div className="flex flex-col items-end gap-1.5">
-                            {/* 🔥 SPREMENJENA ZNAČKA ZA REKLAMO 🔥 */}
+                            {/* 🔥 SPONSORED BADGE 🔥 */}
                             {isBoostedAd && (
                               <div className="flex items-center gap-1 text-[7px] font-black px-2 py-1 rounded-md border border-blue-500/50 bg-blue-500/10 backdrop-blur-sm text-blue-500 animate-pulse shadow-[0_0_10px_rgba(59,130,246,0.3)]">
                                 ⚡ SPONSORED
@@ -813,7 +827,7 @@ export default function GlobalFeed({
                         ) : (
                           <div>
                             {/* 🔥 ČE JE FORGE OBJAVA, IZRIŠI KARTICO NAMERSTO TEKSTA IN SIGNALA 🔥 */}
-                            {isForgeAlert && forgeData ? (
+                            {isForgeAlert && forgeData && !isWalletAd ? (
                               <div className={`mt-4 mb-5 p-6 rounded-[2rem] border overflow-hidden relative backdrop-blur-md ${darkMode ? 'bg-black/60 border-[#89CFF0]/20 shadow-[0_10px_30px_rgba(0,0,0,0.3)]' : 'bg-white/60 border-[#89CFF0]/30 shadow-sm'}`}>
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-[#89CFF0]/10 blur-3xl rounded-full pointer-events-none"></div>
                                 
@@ -847,9 +861,10 @@ export default function GlobalFeed({
                                 </div>
                               </div>
                             ) : (
-                              /* NORMALNA OBJAVA (SIGNAL + TEXT) */
+                              /* NORMALNA OBJAVA ALI OGLAS */
                               <>
-                                {post.entry && (
+                                {/* Prikaz Signal Podatkov SAMO, če NI wallet_ad */}
+                                {post.entry && !isWalletAd && (
                                     <div className="flex gap-2 my-3">
                                     {isPending && (
                                         <div className="py-1.5 px-3 rounded-lg text-[8px] font-black uppercase tracking-[0.2em] bg-yellow-500/10 text-yellow-500 border border-yellow-500/30 flex items-center gap-2 animate-pulse backdrop-blur-sm shadow-inner">
@@ -868,20 +883,20 @@ export default function GlobalFeed({
                                             post.signal_status === 'win' ? 'bg-green-500/10 text-green-500 border border-green-500/30 shadow-[inset_0_0_10px_rgba(34,197,94,0.1)]' :
                                             post.signal_status === 'loss' ? 'bg-red-500/10 text-red-500 border border-red-500/30 shadow-[inset_0_0_10px_rgba(239,68,68,0.1)]' :
                                             post.signal_status === 'manual_exit' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/30 shadow-[inset_0_0_10px_rgba(59,130,246,0.1)]' :
-                                            (post.signal_status === 'visual_only' || post.signal_status === 'waiting_mt5') ? 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/30' :
+                                            (post.signal_status === 'visual_only' || post.signal_status === 'waiting_mt5' || post.signal_status === 'mt5_pending' || post.signal_status === 'mt5') ? 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/30' :
                                             'bg-zinc-500/10 text-zinc-500 border border-zinc-500/30'
                                         }`}>
                                             {post.signal_status === 'win' ? '🎯 TARGET HIT' :
                                             post.signal_status === 'loss' ? '🛑 STOPPED OUT' :
                                             post.signal_status === 'manual_exit' ? '✋ MANUAL CLOSE' :
-                                            (post.signal_status === 'visual_only' || post.signal_status === 'waiting_mt5') ? '👁️ MT5 PENDING' :
+                                            (post.signal_status === 'visual_only' || post.signal_status === 'waiting_mt5' || post.signal_status === 'mt5_pending' || post.signal_status === 'mt5') ? '👁️ MT5 PENDING' :
                                             '🛡️ BREAK EVEN (VOID)'}
                                         </div>
                                     )}
                                     </div>
                                 )}
 
-                                {post.pair && (
+                                {post.pair && !isWalletAd && (
                                    <div className={`mt-3 mb-5 flex flex-wrap gap-0 p-1 rounded-[1.2rem] border relative overflow-hidden backdrop-blur-md shadow-inner ${getSunkenClass(darkMode)}`}>
                                       <div className="flex-1 flex flex-col pl-4 pr-2 py-3 border-r border-zinc-500/20">
                                          <span className="text-[7px] uppercase font-black text-zinc-500 mb-0.5">Pair</span>
@@ -938,7 +953,7 @@ export default function GlobalFeed({
                                       )}
                                    </div>
                                 )}
-                                <p className={`text-[13px] md:text-[14px] font-medium leading-relaxed tracking-tight mb-5 break-words ${
+                                <p className={`text-[13px] md:text-[14px] font-medium leading-relaxed tracking-tight mb-5 break-words whitespace-pre-wrap ${
                                   darkMode ? 'text-zinc-200' : 'text-zinc-800'
                                 }`}>
                                   {contentStr}
@@ -950,7 +965,7 @@ export default function GlobalFeed({
                       </div>
 
                       {/* 🔥 BOTTOM ACTION BAR 🔥 */}
-                      {!showBlur && (
+                      {!showBlur && !isWalletAd && (
                         <>
                           <div className="flex flex-wrap items-center gap-2 md:gap-3">
                             <button 
@@ -1082,10 +1097,25 @@ export default function GlobalFeed({
                           )}
                         </>
                       )}
+
+         {/* 🔥 POPRAVLJEN ACTION BAR ZA OGLASE 🔥 */}
+{isWalletAd && post.link && (
+   <div className="flex w-full mt-4">
+       <a 
+          href={post.link.startsWith('http') ? post.link : `https://${post.link}`} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="w-full py-4 bg-gradient-to-r from-blue-600 to-blue-800 text-white text-center rounded-2xl text-[11px] font-black uppercase tracking-widest hover:brightness-110 active:scale-95 transition-all shadow-[0_10px_20px_rgba(37,99,235,0.3)] border border-blue-400/30"
+       >
+           Learn More ➔
+       </a>
+   </div>
+)}
+
                    </div>
                  </div>
 
-                 {isClosed && (
+                 {isClosed && !isWalletAd && (
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-[0.03] overflow-hidden z-0">
                         <span className="text-9xl font-black rotate-[-20deg] uppercase tracking-tighter whitespace-nowrap">
                             {post.signal_status?.replace('_', ' ')}

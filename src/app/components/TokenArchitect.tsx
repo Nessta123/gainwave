@@ -40,15 +40,32 @@ export default function TokenArchitect({ userData, darkMode, onBack }: any) {
     launchChain: 'SOL' as 'SOL' | 'ETH' | 'BASE', softCap: '', hardCap: '', liquidityPercent: 51,
     description: '', website: '', twitter: '', telegram: '', whitepaper: '',
     airdropPercent: 0, airdropCondition: 'activity',
+    // 🔥 DODANO ZA AIRDROP LOGIKO 🔥
+    minComments: 0, minLikes: 0,
     // 🔥 NADGRADNJE: VESTING, WHITELIST, AUTO-DEX 🔥
     isWhitelistEnabled: false,
-    whitelistAddresses: '', // 🔥 DODAN STATE ZA SHRANI TEKST NASLOVOV 🔥
+    whitelistAddresses: '', 
     vestingPercent: 100, // 100 pomeni brez vestinga (vse se odklene takoj)
     vestingMonths: 0,
     autoDex: true
   });
 
   const [configLoaded, setConfigLoaded] = useState(false);
+
+  // 🔥 PHANTOM AUTO-RECONNECT FIX 🔥
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const provider = (window as any).phantom?.solana || (window as any).solana;
+      if (provider?.isPhantom) {
+        // Tihi poskus povezave, če je denarnica že bila avtorizirana
+        provider.connect({ onlyIfTrusted: true }).then((res: any) => {
+          setWalletAddress(res.publicKey.toString());
+        }).catch(() => {
+          /* Tiho ignoriramo, uporabnik bo sam kliknil Connect */
+        });
+      }
+    }
+  }, []);
 
   // 🔥 NOVO: IRON MEMORY (Spomin) ZA KOVAČNICO (Reši težavo s Phantom Deep Linkom!) 🔥
   useEffect(() => {
@@ -269,7 +286,7 @@ export default function TokenArchitect({ userData, darkMode, onBack }: any) {
     }
   };
 
-  // 🔥 POPRAVLJENA SOLANA TRANSAKCIJA 🔥
+  // 🔥 POPRAVLJENA SOLANA TRANSAKCIJA IN DEPLOY API KLIC 🔥
   const handleDeploy = async () => {
     if (!userData?.id) return toast.error("User session not found!");
     if (!walletAddress) return toast.error("Please connect your Web3 Wallet first!");
@@ -301,7 +318,8 @@ export default function TokenArchitect({ userData, darkMode, onBack }: any) {
          const connection = new Connection("https://api.mainnet-beta.solana.com", "confirmed");
          const fromPubkey = new PublicKey(walletAddress);
          const toPubkey = new PublicKey(CEO_WALLET_SOL);
-         const lamports = Math.floor(totalFee * LAMPORTS_PER_SOL);
+         // 🔥 POPRAVEK: Uporaba Math.round da preprečimo decimal error v Solana omrežju
+         const lamports = Math.round(totalFee * LAMPORTS_PER_SOL);
 
          const transaction = new Transaction().add(
            SystemProgram.transfer({
@@ -339,11 +357,15 @@ export default function TokenArchitect({ userData, darkMode, onBack }: any) {
           supply: config.supply,
           network: config.launchChain,
           ownerAddress: walletAddress,
-          // 🔥 NOVI PARAMETRI ZA DEPLOYMENT 🔥
           isWhitelistEnabled: config.isWhitelistEnabled,
-          whitelistAddresses: config.isWhitelistEnabled ? config.whitelistAddresses : '', // 🔥 DODAN TEXT NASLOVOV V API KLIC 🔥
+          whitelistAddresses: config.isWhitelistEnabled ? config.whitelistAddresses : '', 
           vestingPercent: config.vestingPercent,
-          autoDex: config.autoDex
+          autoDex: config.autoDex,
+          // 🔥 POŠLJEMO TUDI AIRDROP PODATKE V BACKEND 🔥
+          airdropPercent: config.airdropPercent,
+          airdropCondition: config.airdropCondition,
+          airdropMinComments: config.minComments,
+          airdropMinLikes: config.minLikes
         })
       });
 
@@ -375,9 +397,11 @@ export default function TokenArchitect({ userData, darkMode, onBack }: any) {
           is_audited: auditRequested,
           contract_address: deployedContractAddress,
           tx_hash: txHash,
-          // 🔥 SHRANI TUDI VESTING IN WHITELIST 🔥
           vesting_percent: config.vestingPercent,
-          whitelist_addresses: config.isWhitelistEnabled ? config.whitelistAddresses : null
+          whitelist_addresses: config.isWhitelistEnabled ? config.whitelistAddresses : null,
+          // 🔥 SHRANIMO V BAZO POGOJE ZA AIRDROP 🔥
+          airdrop_min_comments: config.minComments,
+          airdrop_min_likes: config.minLikes
         }])
         .select()
         .single();
@@ -408,7 +432,6 @@ export default function TokenArchitect({ userData, darkMode, onBack }: any) {
 
       toast.success("ASSET LIVE ON BLOCKCHAIN! Genesis Post injected into Global Feed.");
       
-      // 🔥 POČISTIMO SPOMIN, DA OB NASLEDNJEM KLIKU ZAČNE ZNOVA 🔥
       if (typeof window !== 'undefined') {
         localStorage.removeItem('gw_forge_state');
       }
@@ -958,12 +981,27 @@ export default function TokenArchitect({ userData, darkMode, onBack }: any) {
                 </button>
               </div>
 
+              {/* 🔥 DODANO: INPUT POLJA POVEZANA S STATE-OM 🔥 */}
               {config.airdropCondition === 'activity' && (
                 <div className={`p-4 md:p-5 rounded-xl md:rounded-2xl border animate-in fade-in zoom-in-95 ${darkMode ? 'bg-black/40 border-white/5' : 'bg-white border-zinc-200 shadow-sm'}`}>
-                  <label className="text-[8px] md:text-[9px] font-black text-zinc-500 uppercase ml-1 md:ml-2 tracking-widest">Min. Interaction Required (Beta)</label>
+                  <label className="text-[8px] md:text-[9px] font-black text-zinc-500 uppercase ml-1 md:ml-2 tracking-widest">Min. Interaction Required</label>
                   <div className="grid grid-cols-2 gap-3 md:gap-4 mt-2 md:mt-3">
-                    <input type="number" placeholder="Min Comments" className={`rounded-lg md:rounded-xl p-3 text-[10px] md:text-xs outline-none border ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-black'}`} />
-                    <input type="number" placeholder="Min Likes" className={`rounded-lg md:rounded-xl p-3 text-[10px] md:text-xs outline-none border ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white' : 'bg-zinc-50 border-zinc-200 text-black'}`} />
+                    <input 
+                      type="number" 
+                      min="0"
+                      placeholder="Min Comments" 
+                      value={config.minComments || ''}
+                      onChange={e => setConfig({...config, minComments: Number(e.target.value)})}
+                      className={`rounded-lg md:rounded-xl p-3 text-[10px] md:text-xs outline-none border ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white focus:border-[#89CFF0]/50' : 'bg-zinc-50 border-zinc-200 text-black focus:border-[#89CFF0]/50'}`} 
+                    />
+                    <input 
+                      type="number" 
+                      min="0"
+                      placeholder="Min Likes" 
+                      value={config.minLikes || ''}
+                      onChange={e => setConfig({...config, minLikes: Number(e.target.value)})}
+                      className={`rounded-lg md:rounded-xl p-3 text-[10px] md:text-xs outline-none border ${darkMode ? 'bg-zinc-900 border-zinc-800 text-white focus:border-[#89CFF0]/50' : 'bg-zinc-50 border-zinc-200 text-black focus:border-[#89CFF0]/50'}`} 
+                    />
                   </div>
                 </div>
               )}
@@ -1047,7 +1085,8 @@ export default function TokenArchitect({ userData, darkMode, onBack }: any) {
                 <div>
                   <h4 className="text-[9px] md:text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-1 md:mb-2 relative z-10">Total Architect Fee</h4>
                   <div className={`text-3xl md:text-4xl font-black font-mono tracking-tighter relative z-10 ${darkMode ? 'text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]' : 'text-black'}`}>
-                    {(FEES[config.launchChain].base + (kycRequested ? FEES[config.launchChain].kyc : 0) + (auditRequested ? FEES[config.launchChain].audit : 0)).toFixed(2)} <span className="text-xs md:text-sm text-[#FF00FF]">{config.launchChain}</span>
+                    {/* Popravek seštevka z uporabo Number() za varnost */}
+                    {(Number(FEES[config.launchChain].base) + (kycRequested ? Number(FEES[config.launchChain].kyc) : 0) + (auditRequested ? Number(FEES[config.launchChain].audit) : 0)).toFixed(2)} <span className="text-xs md:text-sm text-[#FF00FF]">{config.launchChain}</span>
                   </div>
                   <p className="text-[8px] md:text-[9px] text-zinc-500 uppercase font-bold mt-3 md:mt-4 leading-relaxed relative z-10">
                     Includes Smart Contract compilation, liquidity pool setup, AI Whitepaper hosting, Auto-Airdrop engine, and GainWave Network integration.

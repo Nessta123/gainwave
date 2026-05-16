@@ -4,13 +4,13 @@
   "short_name": "GainWave",
   "description": "Premium Trading Intelligence Platform",
   "version": "1.0.5",
-  "start_url": "https://www.gain-wave.com/?source=pwa",
+  "start_url": "/?source=pwa",
   "display": "standalone",
   "display_override": [
     "standalone",
     "window-controls-overlay"
   ],
-  "scope": "https://www.gain-wave.com/",
+  "scope": "/",
   "orientation": "portrait",
   "background_color": "#000000",
   "theme_color": "#000000",
@@ -26,7 +26,7 @@
       "name": "Alpha Signals",
       "short_name": "Alpha",
       "description": "Preveri zadnje VIP signale",
-      "url": "https://www.gain-wave.com/?channel=alpha-signals",
+      "url": "/?channel=alpha-signals",
       "icons": [
         {
           "src": "/AppIcon.png",
@@ -39,7 +39,7 @@
       "name": "Copy Trading",
       "short_name": "Auto-Trade",
       "description": "Upravljaj svoj Grid & Copy Bot",
-      "url": "https://www.gain-wave.com/?view=copy-trading",
+      "url": "/?view=copy-trading",
       "icons": [
         {
           "src": "/AppIcon.png",
