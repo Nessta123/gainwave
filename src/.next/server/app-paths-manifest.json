@@ -1,0 +1,18 @@
+{
+  "/_global-error/page": "app/_global-error/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/api/checkout/route": "app/api/checkout/route.js",
+  "/api/fetch-binance/route": "app/api/fetch-binance/route.js",
+  "/api/fetch-exchanges/route": "app/api/fetch-exchanges/route.js",
+  "/api/fetch-ftmo/route": "app/api/fetch-ftmo/route.js",
+  "/api/fetch-mql5/route": "app/api/fetch-mql5/route.js",
+  "/api/fetch-myfxbook/route": "app/api/fetch-myfxbook/route.js",
+  "/api/forge-ai/route": "app/api/forge-ai/route.js",
+  "/api/judge/route": "app/api/judge/route.js",
+  "/api/prices/route": "app/api/prices/route.js",
+  "/api/resolve-signals/route": "app/api/resolve-signals/route.js",
+  "/api/send-push/route": "app/api/send-push/route.js",
+  "/api/webhook/route": "app/api/webhook/route.js",
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/page": "app/page.js"
+}

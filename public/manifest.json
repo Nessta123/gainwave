@@ -1,0 +1,72 @@
+{
+  "id": "com.gainwave.pro.terminal",
+  "name": "GainWave Pro Terminal",
+  "short_name": "GainWave",
+  "description": "Premium Trading Intelligence Platform",
+  "version": "1.0.5",
+  "start_url": "/?source=pwa",
+  "display": "standalone",
+  "display_override": [
+    "standalone",
+    "window-controls-overlay"
+  ],
+  "scope": "/",
+  "orientation": "portrait",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "categories": [
+    "finance",
+    "business"
+  ],
+  "prefer_related_applications": false,
+  "related_applications": [],
+  "gcm_sender_id": "103953800507",
+  "shortcuts": [
+    {
+      "name": "Alpha Signals",
+      "short_name": "Alpha",
+      "description": "Preveri zadnje VIP signale",
+      "url": "/?channel=alpha-signals",
+      "icons": [
+        {
+          "src": "/AppIcon.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Copy Trading",
+      "short_name": "Auto-Trade",
+      "description": "Upravljaj svoj Grid & Copy Bot",
+      "url": "/?view=copy-trading",
+      "icons": [
+        {
+          "src": "/AppIcon.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ],
+  "icons": [
+    {
+      "src": "/AppIcon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/AppIcon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/AppIcon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

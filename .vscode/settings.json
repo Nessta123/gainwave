@@ -1,0 +1,8 @@
+{
+    "deno.enable": true,
+    "deno.lint": true,
+    "deno.path": "/Users/user/.deno/bin/deno",
+    "deno.enablePaths": [
+        "supabase/functions"
+    ]
+}

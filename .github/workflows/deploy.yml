@@ -1,0 +1,26 @@
+name: Deploy GainWave
+
+on:
+  push:
+    branches:
+      - master  # tvoja veja je master, kot vidim iz logov
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy to Server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_IP }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /var/www/gainwave
+            git pull origin master
+            npm install
+            npm run build
+            pm2 restart all
